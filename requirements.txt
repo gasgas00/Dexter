@@ -1,10 +1,10 @@
 streamlit
-opencv-python-headless
 pytesseract
-pdfplumber
+opencv-python-headless
+pillow
 pandas
+pdfplumber
 python-dateutil
-cv2
 
 
 
