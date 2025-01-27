@@ -4,3 +4,15 @@ pytesseract
 pdfplumber
 pandas
 python-dateutil
+cv2
+numpy
+re
+pandas
+pdflumber
+calendar
+
+
+
+
+
+
