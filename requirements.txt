@@ -1,0 +1,6 @@
+streamlit
+opencv-python
+pytesseract
+pdfplumber
+pandas
+python-dateutil
