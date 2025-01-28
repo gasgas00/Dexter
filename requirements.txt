@@ -5,6 +5,7 @@ pillow
 pandas
 pdfplumber
 python-dateutil
+xlrd==1.2.0
 
 
 
