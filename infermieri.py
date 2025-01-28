@@ -398,3 +398,14 @@ def main():
                                     s, count = shift_items[i+2]
                                     ore = metrics['ore_totali'][s]
                                     st.write(f"**{s}:** {count} ({ore} ore)")
+                        st.write("---")
+                        st.write(f"**Giorni totali:** {metrics['days_in_month']}")
+                        st.write(f"**Domeniche:** {metrics['sundays']}")
+                        st.write(f"**Festività:** {metrics['festivita_count']}")
+                        if metrics['festivita_nomi']:
+                            st.write(f"**Nomi festività:** {', '.join(metrics['festivita_nomi'])}")
+        
+        st.markdown("<div class='footer'>sviluppata da Gian M.</div>", unsafe_allow_html=True)
+
+if __name__ == '__main__':
+    main()
