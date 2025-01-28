@@ -8,31 +8,30 @@ import pdfplumber
 import calendar
 from dateutil.easter import easter
 from datetime import datetime
+from io import BytesIO
+import pyexcel
 
 # Configurazione Tesseract per macOS
 pytesseract.pytesseract.tesseract_cmd = '/usr/local/bin/tesseract'
 
-# Lista fissa dei nominativi (usata come prioritaria)
+# Lista fissa dei nominativi
 FIXED_NAMES = [
     "TATIANA ARTENIE", "GIANLUCA MATARRESE", "SIMONA LUPU", 
     "CHIAROTTI EMMA", "RUGGIANO MASSIMO", "LIVIA BURRAI", 
     "ANDREA PALLI", "TIZNADO MARLY", "SPADA MATTEO", "CUTAIA MARCO"
 ]
 
-# Mappa valori turni
 ORE_MAP = {
     'M': 7, 'P': 7, 'N': 10, 'MP': 14,
     'PN': 16, 'REC': -6, 'F': 6, 'S': 0
 }
 
-# Colori per i turni
 SHIFT_COLORS = {
     'M': '#FFCCCB', 'P': '#ADD8E6', 'N': '#90EE90',
     'R': '#D3D3D3', 'S': '#FFA07A', 'F': '#FFD700',
     'PN': '#FF69B4', 'MP': '#9370DB', 'REC': '#D3D3D3'
 }
 
-# Colori per i mesi
 MONTH_COLORS = {
     'Gennaio': '#FF6F61', 'Febbraio': '#6B5B95',
     'Marzo': '#88B04B', 'Aprile': '#F7CAC9',
@@ -43,17 +42,14 @@ MONTH_COLORS = {
 }
 
 def normalize_name(name):
-    """Normalizza i nomi per il matching preciso"""
     name = re.sub(r'\s+', ' ', str(name).upper().strip())
     name = re.sub(r'[^A-ZÀÈÉÌÒÙ\s]', '', name)
     return name
 
 def is_valid_name(text):
-    """Verifica se il testo è un nome valido (almeno nome e cognome)"""
     return re.match(r'^[A-ZÀÈÉÌÒÙ]{2,}\s+[A-ZÀÈÉÌÒÙ]{2,}(\s+[A-ZÀÈÉÌÒÙ]{2,})*$', text)
 
 def get_italian_holidays(year):
-    """Calcola le festività italiane per un dato anno"""
     holidays = [
         {'month': 1, 'day': 1, 'name': 'Capodanno'},
         {'month': 1, 'day': 6, 'name': 'Epifania'},
@@ -67,7 +63,6 @@ def get_italian_holidays(year):
         {'month': 12, 'day': 26, 'name': 'S.Stefano'}
     ]
     
-    # Aggiungi Pasquetta
     easter_date = easter(year)
     pasquetta = easter_date + pd.DateOffset(days=1)
     holidays.append({'month': pasquetta.month, 'day': pasquetta.day, 'name': 'Pasquetta'})
@@ -75,28 +70,29 @@ def get_italian_holidays(year):
     return holidays
 
 def extract_from_excel(excel_file):
-    """Estrazione dati da Excel con controllo migliorato"""
+    """Gestisce sia XLS che XLSX con pyexcel e openpyxl"""
     try:
-        # Usa openpyxl per tutti i file Excel
-        df = pd.read_excel(excel_file, header=None, engine='openpyxl')
+        content = excel_file.read()
+        excel_file.seek(0)
+        
+        # Controlla se è un file XLS (formato binario)
+        if content.startswith(b'\xD0\xCF\x11\xE0'):
+            sheet = pyexcel.get_sheet(file_type='xls', file_stream=BytesIO(content))
+            df = pd.DataFrame(sheet.array)
+        else:
+            df = pd.read_excel(excel_file, header=None, engine='openpyxl')
             
         people_shifts = {}
         current_name = None
         
-        # Cerca prima i nominativi fissi
         for idx, row in df.iterrows():
             for cell in row:
                 if pd.isna(cell):
                     continue
                 clean_cell = normalize_name(str(cell))
-                # Verifica se è un nome valido
                 if is_valid_name(clean_cell):
-                    # Cerca corrispondenza con i nomi fissi
                     fixed_match = next((fn for fn in FIXED_NAMES if fn in clean_cell), None)
-                    if fixed_match:
-                        current_name = fixed_match
-                    else:
-                        current_name = clean_cell
+                    current_name = fixed_match if fixed_match else clean_cell
                 elif current_name and re.match(r'^[MPNRECSF]{1,2}$', str(cell).strip().upper()):
                     if current_name not in people_shifts:
                         people_shifts[current_name] = []
@@ -109,7 +105,6 @@ def extract_from_excel(excel_file):
         return {}
 
 def extract_from_pdf(pdf_file):
-    """Estrazione dati da PDF con migliorata rilevazione tabelle"""
     try:
         people_shifts = {}
         current_name = None
@@ -119,14 +114,12 @@ def extract_from_pdf(pdf_file):
                 text = page.extract_text()
                 tables = page.extract_tables()
                 
-                # Estrazione da testo libero
                 for line in text.split('\n'):
                     clean_line = normalize_name(line)
                     if is_valid_name(clean_line):
                         fixed_match = next((fn for fn in FIXED_NAMES if fn in clean_line), None)
                         current_name = fixed_match if fixed_match else clean_line
                 
-                # Estrazione da tabelle
                 for table in tables:
                     for row in table:
                         for cell in row:
@@ -148,7 +141,6 @@ def extract_from_pdf(pdf_file):
         return {}
 
 def calculate_metrics(shifts, month, year):
-    """Calcola tutte le metriche richieste"""
     try:
         month_num = [
             'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
@@ -245,14 +237,12 @@ def main():
                 people_shifts = extract_from_excel(uploaded_file)
         
         if people_shifts:
-            # Filtra solo i nominativi con turni
             valid_people = {k: v for k, v in people_shifts.items() if len(v) > 0}
             
             if not valid_people:
                 st.error("❌ Nessun dato rilevato nel documento!")
                 return
                 
-            # CORREZIONE: Unisci nomi fissi e rilevati senza duplicati
             all_names = list(
                 dict.fromkeys(
                     [name for name in FIXED_NAMES if name in valid_people] +
