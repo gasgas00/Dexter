@@ -10,7 +10,7 @@ openpyxl
 pyexcel>=0.7.0
 pyexcel-xls>=0.7.0
 pyexcel-io>=0.6.5
-
+icalendar
 
 
 
