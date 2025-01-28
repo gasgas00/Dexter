@@ -1,4 +1,3 @@
-import cv2
 import pytesseract
 import streamlit as st
 import numpy as np
@@ -78,10 +77,8 @@ def get_italian_holidays(year):
 def extract_from_excel(excel_file):
     """Estrazione dati da Excel con controllo migliorato"""
     try:
-        if excel_file.name.endswith('.xls'):
-            df = pd.read_excel(excel_file, header=None, engine='xlrd')
-        else:
-            df = pd.read_excel(excel_file, header=None, engine='openpyxl')
+        # Usa openpyxl per tutti i file Excel
+        df = pd.read_excel(excel_file, header=None, engine='openpyxl')
             
         people_shifts = {}
         current_name = None
