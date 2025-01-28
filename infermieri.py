@@ -195,6 +195,29 @@ def extract_from_ics(ics_file):
         st.error(f"Errore lettura ICS: {str(e)}")
         return []
 
+def adjust_shifts(shifts):
+    """Gestisce le assenze e le regole sul turno di notte e smonto"""
+    adjusted_shifts = []
+    previous_shift = None
+    
+    for shift in shifts:
+        if shift == 'ASS':
+            adjusted_shifts.append('ASS')
+            previous_shift = None  # Ignora il turno precedente e successivo
+        elif shift == 'N':  # Se è una Notte
+            if previous_shift != 'N':  # Se non è preceduta da un'altra Notte
+                adjusted_shifts.append('N')
+                adjusted_shifts.append('S')  # Aggiungi Smonto dopo la Notte
+                previous_shift = 'S'  # La S è il turno successivo alla Notte
+            else:
+                adjusted_shifts.append('N')
+                previous_shift = 'N'  # Continua con Notte
+        else:
+            adjusted_shifts.append(shift)
+            previous_shift = shift
+    
+    return adjusted_shifts
+
 def calculate_metrics(shifts, month, year):
     try:
         month_num = [
@@ -217,7 +240,8 @@ def calculate_metrics(shifts, month, year):
                     sundays += 1
         
         valid_shifts = shifts[:days_in_month]
-        shift_counts = {s: valid_shifts.count(s) for s in ORE_MAP}
+        adjusted_shifts = adjust_shifts(valid_shifts)  # Regola i turni
+        shift_counts = {s: adjusted_shifts.count(s) for s in ORE_MAP}
         ore_totali = {s: count * ORE_MAP[s] for s, count in shift_counts.items()}
         
         ore_mensili = sum(ore for s, ore in ore_totali.items() if s not in ['R', 'S', 'REC'])
@@ -229,7 +253,7 @@ def calculate_metrics(shifts, month, year):
 
         cal = calendar.Calendar(firstweekday=0)
         month_weeks = cal.monthdayscalendar(year, month_num)
-        shifts_per_day = (valid_shifts + [''] * days_in_month)[:days_in_month]
+        shifts_per_day = (adjusted_shifts + [''] * days_in_month)[:days_in_month]
         
         weeks = []
         for week in month_weeks:
@@ -260,147 +284,51 @@ def calculate_metrics(shifts, month, year):
         st.error(f"Errore nei calcoli: {str(e)}")
         return None
 
-def display_month(month, year, festivita_nomi):
-    month_color = MONTH_COLORS.get(month, '#000000')
-    st.markdown(
-        f"<h2 style='text-align: center; color: {month_color};'>"
-        f"{month} {year}</h2>",
-        unsafe_allow_html=True
-    )
-    
-    if festivita_nomi:
-        st.markdown(
-            f"<div style='text-align: center; margin-top: -15px; color: #666666;'>"
-            f"({', '.join(festivita_nomi)})</div>",
-            unsafe_allow_html=True
-        )
+def display_metrics(metrics):
+    if metrics:
+        st.header("Riepilogo Mensile")
+        st.subheader(f"Festività: {metrics['festivita_count']} giorni ({', '.join(metrics['festivita_nomi'])})")
+        st.subheader(f"Domeniche: {metrics['sundays']}")
+        st.subheader(f"Ore Totali Lavorate: {metrics['ore_mensili']} ore")
+        st.subheader(f"Ore Target: {metrics['target_ore']} ore")
+        st.subheader(f"Ore Straordinario: {metrics['ore_straordinario']} ore")
+        st.subheader(f"Ore Mancanti: {metrics['ore_mancanti']} ore")
+        st.write("Turni Settimanali:")
+        for week in metrics['weeks']:
+            st.write(week)
+def display_metrics(metrics):
+    if metrics:
+        st.header("Riepilogo Mensile")
+        st.subheader(f"Festività: {metrics['festivita_count']} giorni ({', '.join(metrics['festivita_nomi'])})")
+        st.subheader(f"Domeniche: {metrics['sundays']}")
+        st.subheader(f"Ore Totali Lavorate: {metrics['ore_mensili']} ore")
+        st.subheader(f"Ore Target: {metrics['target_ore']} ore")
+        st.subheader(f"Ore Straordinario: {metrics['ore_straordinario']} ore")
+        st.subheader(f"Ore Mancanti: {metrics['ore_mancanti']} ore")
+        st.write("Turni Settimanali:")
+        for week in metrics['weeks']:
+            st.write(week)
 
 def main():
-    st.markdown("<h1>Eureka!</h1>", unsafe_allow_html=True)
-    st.markdown("<div class='subheader'>L'App di analisi turni dell'UTIC</div>", unsafe_allow_html=True)
+    st.title("Gestione Turni Personale")
     
-    # Istruzioni per scaricare il file ICS da Zucchetti
-    st.markdown("""
-        <div class='instructions'>
-            <strong>ISTRUZIONI PER SCARICARE IL FILE DA ZUCCHETTI:</strong>
-            <ol>
-                <li>Entrare su Zucchetti</li>
-                <li>Cliccare in alto a sinistra sul menu rappresentato dai quadratini ed entrare su Zscheduling</li>
-                <li>In alto comparirà la dicitura "Calendario Operatore", cliccare su essa</li>
-                <li><strong>Ora in alto a destra va cambiata la dicitura da "Settimanale" a "Mensile"</strong></li>
-                <li>Una volta selezionato il calendario mensile, cliccare sopra di esso sulla scritta "ESPORTA" e finalmente esportare il calendario in formato ICS da caricare qui.</li>
-            </ol>
-        </div>
-    """, unsafe_allow_html=True)
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        month = st.selectbox(
-            "Seleziona il mese:",
-            ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
-             'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre']
-        )
-    with col2:
-        year = st.number_input(
-            "Seleziona l'anno:",
-            min_value=2000,
-            max_value=2100,
-            value=datetime.now().year
-        )
-    
-    uploaded_file = st.file_uploader("Carica il planning turni", type=['xlsx', 'xls', 'ics'])
+    uploaded_file = st.file_uploader("Carica un file Excel o ICS", type=["xls", "xlsx", "ics"])
     
     if uploaded_file:
-        with st.spinner('Elaborazione in corso...'):
-            if uploaded_file.type == "text/calendar":
-                shifts = extract_from_ics(uploaded_file)
-                if 'ASS' in shifts:
-                    st.warning("⚠️ Sono presenti delle assenze nel file ICS. Clicca sulle assenze per specificare se si tratta di FERIE (F) o MALATTIA (MAL).")
-                
-                # Gestione delle assenze
-                for i, shift in enumerate(shifts):
-                    if shift == 'ASS':
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            if st.button(f"Ferie (F) per il giorno {i+1}"):
-                                shifts[i] = 'F'
-                        with col2:
-                            if st.button(f"Malattia (MAL) per il giorno {i+1}"):
-                                shifts[i] = 'MAL'
-                
-                metrics = calculate_metrics(shifts, month, year)
-                
-                if metrics:
-                    display_month(month, year, metrics['festivita_nomi'])
-                    
-                    st.subheader("📅 Turni")
-                    
-                    weekdays = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom']
-                    cols = st.columns(7)
-                    for i, day in enumerate(weekdays):
-                        with cols[i]:
-                            st.markdown(f"<div style='color: #7f8fa6; text-align: center;'>{day}</div>", unsafe_allow_html=True)
-
-                    for week in metrics['weeks']:
-                        cols = st.columns(7)
-                        for i, (day_num, shift) in enumerate(week):
-                            with cols[i]:
-                                if day_num != 0:
-                                    bg_color = SHIFT_COLORS.get(shift, '#16213e')
-                                    st.markdown(
-                                        f"<div style='text-align: center; margin: 2px; padding: 8px; "
-                                        f"border-radius: 5px; background-color: {bg_color}; "
-                                        f"min-height: 50px; display: flex; flex-direction: column; "
-                                        f"justify-content: center; border: 1px solid #30475e;'>"
-                                        f"<div style='font-size: 0.8em; color: #666;'>{day_num}</div>"
-                                        f"<div style='font-size: 1.2em; color: {'#ffffff' if bg_color != '#16213e' else '#7f8fa6'}'>"
-                                        f"{shift}</div></div>",
-                                        unsafe_allow_html=True
-                                    )
-                                else:
-                                    st.markdown("<div style='min-height:50px'></div>", unsafe_allow_html=True)
-                    
-                    if metrics:
-                        st.subheader("📊 Riepilogo Ore")
-                        
-                        col1, col2, col3 = st.columns(3)
-                        col1.metric("Totale Ore Lavorate", f"{metrics['ore_mensili']} ore")
-                        col2.metric("Ore Previste", f"{metrics['target_ore']} ore")
-                        
-                        if metrics['ore_mancanti'] > 0:
-                            col3.markdown(f"<div class='negative'>🟡 Ore Mancanti: {metrics['ore_mancanti']}h</div>", unsafe_allow_html=True)
-                        elif metrics['ore_straordinario'] > 0:
-                            col3.markdown(f"<div class='positive'>🟢 Ore Straordinario: {metrics['ore_straordinario']}h</div>", unsafe_allow_html=True)
-                        
-                        st.write("---")
-                        st.markdown("**Dettaglio Turni:**")
-                        cols = st.columns(3)
-                        shift_items = list(metrics['shift_counts'].items())
-                        
-                        for i in range(0, len(shift_items), 3):
-                            with cols[0]:
-                                if i < len(shift_items):
-                                    s, count = shift_items[i]
-                                    ore = metrics['ore_totali'][s]
-                                    st.write(f"**{s}:** {count} ({ore} ore)")
-                            with cols[1]:
-                                if i+1 < len(shift_items):
-                                    s, count = shift_items[i+1]
-                                    ore = metrics['ore_totali'][s]
-                                    st.write(f"**{s}:** {count} ({ore} ore)")
-                            with cols[2]:
-                                if i+2 < len(shift_items):
-                                    s, count = shift_items[i+2]
-                                    ore = metrics['ore_totali'][s]
-                                    st.write(f"**{s}:** {count} ({ore} ore)")
-                        st.write("---")
-                        st.write(f"**Giorni totali:** {metrics['days_in_month']}")
-                        st.write(f"**Domeniche:** {metrics['sundays']}")
-                        st.write(f"**Festività:** {metrics['festivita_count']}")
-                        if metrics['festivita_nomi']:
-                            st.write(f"**Nomi festività:** {', '.join(metrics['festivita_nomi'])}")
+        if uploaded_file.name.endswith(('.xls', '.xlsx')):
+            shifts = extract_from_excel(uploaded_file)
+        elif uploaded_file.name.endswith('.ics'):
+            shifts = extract_from_ics(uploaded_file)
         
-        st.markdown("<div class='footer'>sviluppata da Gian M.</div>", unsafe_allow_html=True)
+        if shifts:
+            month = st.selectbox("Seleziona il mese", [
+                "Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno",
+                "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"
+            ])
+            year = st.number_input("Seleziona l'anno", min_value=2020, max_value=2100, value=datetime.now().year)
 
-if __name__ == '__main__':
+            metrics = calculate_metrics(shifts, month, year)
+            display_metrics(metrics)
+
+if __name__ == "__main__":
     main()
