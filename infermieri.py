@@ -153,16 +153,27 @@ def calculate_metrics(shifts, month, year):
         festivita = [h for h in holidays if h['month'] == month_num]
         festivita_count = len(festivita)
         festivita_nomi = [h['name'] for h in festivita]
+
+        # Calcolo domeniche nel mese
+        cal = calendar.Calendar()
+        sundays = 0
+        for week in cal.monthdays2calendar(year, month_num):
+            for day, weekday in week:
+                if day != 0 and weekday == 6:  # weekday 6 = domenica
+                    sundays += 1
         
         valid_shifts = shifts[:days_in_month]
         shift_counts = {s: valid_shifts.count(s) for s in ORE_MAP}
         ore_totali = {s: count * ORE_MAP[s] for s, count in shift_counts.items()}
         
         ore_mensili = sum(ore for s, ore in ore_totali.items() if s not in ['R', 'S', 'REC'])
-        r_count = shift_counts.get('R', 0)
-        target_ore = (days_in_month - (r_count + festivita_count)) * 6
-        ore_mancanti = target_ore - ore_mensili
+        target_ore = (days_in_month - sundays - festivita_count) * 6
         
+        # Calcolo differenza con gestione positiva/negativa
+        differenza = ore_mensili - target_ore
+        ore_mancanti = max(-differenza, 0)  # Solo se negativo
+        ore_straordinario = max(differenza, 0)  # Solo se positivo
+
         cal = calendar.Calendar(firstweekday=0)
         month_weeks = cal.monthdayscalendar(year, month_num)
         shifts_per_day = (valid_shifts + [''] * days_in_month)[:days_in_month]
@@ -187,7 +198,9 @@ def calculate_metrics(shifts, month, year):
             'ore_mensili': ore_mensili,
             'target_ore': target_ore,
             'ore_mancanti': ore_mancanti,
-            'weeks': weeks
+            'ore_straordinario': ore_straordinario,
+            'weeks': weeks,
+            'sundays': sundays
         }
         
     except Exception as e:
@@ -291,9 +304,14 @@ def main():
                     st.subheader("📊 Riepilogo Ore")
                     
                     col1, col2, col3 = st.columns(3)
-                    col1.metric("Totale Ore", f"{metrics['ore_mensili']} ore")
+                    col1.metric("Totale Ore Lavorate", f"{metrics['ore_mensili']} ore")
                     col2.metric("Ore Previste", f"{metrics['target_ore']} ore")
-                    col3.metric("Ore Mancanti", f"{metrics['ore_mancanti']} ore")
+                    
+                    # Mostra solo ore mancanti o straordinario in base al caso
+                    if metrics['ore_mancanti'] > 0:
+                        col3.metric("🟡 Ore Mancanti", f"{metrics['ore_mancanti']} ore")
+                    if metrics['ore_straordinario'] > 0:
+                        col3.metric("🟢 Ore Straordinario", f"{metrics['ore_straordinario']} ore")
                     
                     st.write("---")
                     st.markdown("**Dettaglio Turni:**")
@@ -319,6 +337,7 @@ def main():
                     
                     st.write("---")
                     st.write(f"**Giorni totali:** {metrics['days_in_month']}")
+                    st.write(f"**Domeniche:** {metrics['sundays']}")
                     st.write(f"**Festività:** {metrics['festivita_count']}")
                     if metrics['festivita_nomi']:
                         st.write(f"**Nomi festività:** {', '.join(metrics['festivita_nomi'])}")
