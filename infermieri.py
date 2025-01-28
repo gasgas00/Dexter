@@ -23,7 +23,7 @@ FIXED_NAMES = [
 
 ORE_MAP = {
     'M': 7, 'P': 7, 'N': 10, 'MP': 14,
-    'PN': 16, 'REC': -6, 'F': 6, 'S': 0
+    'PN': 17, 'REC': -6, 'F': 6, 'S': 0
 }
 
 SHIFT_COLORS = {
