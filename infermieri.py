@@ -380,11 +380,6 @@ def main():
                         for i in range(0, len(shift_items), 3):
                             with cols[0]:
                                 if i < len(shift_items):
-                                    s, count = shift_items = list(metrics['shift_counts'].items())
-                        
-                        for i in range(0, len(shift_items), 3):
-                            with cols[0]:
-                                if i < len(shift_items):
                                     s, count = shift_items[i]
                                     ore = metrics['ore_totali'][s]
                                     st.write(f"**{s}:** {count} ({ore} ore)")
