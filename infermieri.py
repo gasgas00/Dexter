@@ -4,7 +4,7 @@ import numpy as np
 from PIL import Image
 import re
 import pandas as pd
-import icalendar
+import calendar
 from dateutil import parser
 from datetime import datetime
 from io import BytesIO
