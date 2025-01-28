@@ -381,7 +381,7 @@ def main():
                             with cols[0]:
                                 if i < len(shift_items):
                                     s, count = shift_items[i]
-                                    ore = metrics['ore_totali'][s]
+                                     ore = metrics['ore_totali'][s]
                                     st.write(f"**{s}:** {count} ({ore} ore)")
                             with cols[1]:
                                 if i+1 < len(shift_items):
