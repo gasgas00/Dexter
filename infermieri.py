@@ -95,9 +95,11 @@ st.markdown("""
             margin: 2px;
         }
         
-        .shift-select {
-            margin-top: 20px;
-            width: 100%;
+        .shift-card {
+            padding: 15px; 
+            border-radius: 10px; 
+            margin: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
     </style>
 """, unsafe_allow_html=True)
@@ -277,7 +279,7 @@ def display_calendar(month, year, shifts, festivita_nomi):
                         index=default_index,
                         key=key,
                         label_visibility="collapsed",
-                        on_change=lambda: st.experimental_rerun()
+                        on_change=lambda: st.rerun()  # Fix 1: Usiamo st.rerun() invece di experimental_rerun()
                     )
                     if new_shift != current_shift:
                         shifts[shift_index] = new_shift
@@ -346,48 +348,56 @@ def main():
                     metrics = calculate_metrics(current_shifts, month, year)
                     
                     if metrics:
+                        # Riepilogo Ore
                         st.write("---")
-                        st.subheader("📊 Grafico a Torta - Dettaglio Turni")
-                        shift_counts = metrics['shift_counts']
-                        df_pie = pd.DataFrame({
-                            'Turno': list(shift_counts.keys()),
-                            'Conteggio': list(shift_counts.values())
-                        })
-                        fig = px.pie(df_pie, values='Conteggio', names='Turno', title='Distribuzione dei Turni')
-                        st.plotly_chart(fig)
-                        
-                        st.write("---")
-                        st.subheader("📋 Dettaglio Turni e Ore")
-                        
-                        num_cols = 3
-                        cols = st.columns(num_cols)
-                        
-                        shift_types = [k for k in ORE_MAP.keys() if k != '-']
-                        for i, shift in enumerate(shift_types):
-                            count = metrics['shift_counts'].get(shift, 0)
-                            total_hours = metrics['ore_totali'].get(shift, 0)
-                            
-                            if count > 0:
-                                with cols[i % num_cols]:
-                                    st.markdown(f"""
-                                        <div style="padding: 15px; background: {SHIFT_COLORS[shift]}; 
-                                            border-radius: 10px; margin: 5px; color: {'white' if shift in ['N', 'PN', 'MP'] else 'black'}">
-                                            <h4>{shift}</h4>
-                                            <p>Turni: {count}</p>
-                                            <p>Ore totali: {total_hours}h</p>
-                                        </div>
-                                    """, unsafe_allow_html=True)
-                        
-                        st.write("---")
-                        st.subheader("📊 Riepilogo Ore")
-                        col1, col2, col3 = st.columns(3)
+                        st.subheader("📊 Riepilogo Mensile")
+                        col1, col2 = st.columns(2)
                         col1.metric("Totale Ore Lavorate", f"{metrics['ore_mensili']} ore")
                         col2.metric("Ore Previste", f"{metrics['target_ore']} ore")
                         
+                        # Sezione combinata Grafico + Dettaglio
+                        st.write("---")
+                        st.subheader("📈 Dettaglio Analitico")
+                        chart_col, data_col = st.columns([2, 3])
+                        
+                        with chart_col:
+                            # Grafico a torta
+                            shift_counts = metrics['shift_counts']
+                            df_pie = pd.DataFrame({
+                                'Turno': list(shift_counts.keys()),
+                                'Conteggio': list(shift_counts.values())
+                            })
+                            fig = px.pie(df_pie, values='Conteggio', names='Turno', title='Distribuzione dei Turni')
+                            st.plotly_chart(fig, use_container_width=True)
+                        
+                        with data_col:
+                            # Dettaglio turni
+                            st.subheader("📋 Turni e Ore Totali")
+                            num_cols = 2
+                            cols = st.columns(num_cols)
+                            
+                            shift_types = [k for k in ORE_MAP.keys() if k != '-']
+                            for i, shift in enumerate(shift_types):
+                                count = metrics['shift_counts'].get(shift, 0)
+                                total_hours = metrics['ore_totali'].get(shift, 0)
+                                
+                                if count > 0:
+                                    with cols[i % num_cols]:
+                                        st.markdown(f"""
+                                            <div class="shift-card" style="background: {SHIFT_COLORS[shift]}; 
+                                                color: {'white' if shift in ['N', 'PN', 'MP'] else 'black'}">
+                                                <h4>{shift}</h4>
+                                                <p>Turni: {count}</p>
+                                                <p>Ore totali: {total_hours}h</p>
+                                            </div>
+                                        """, unsafe_allow_html=True)
+                        
+                        # Ore mancanti/straordinario
+                        st.write("---")
                         if metrics['ore_mancanti'] > 0:
-                            col3.markdown(f"<div style='color: #ffd700;'>🟡 Ore Mancanti: {metrics['ore_mancanti']}h</div>", unsafe_allow_html=True)
+                            st.markdown(f"<div style='padding: 20px; background: #333; border-radius: 10px; color: #ffd700; font-size: 1.2em;'>🟡 Ore Mancanti: {metrics['ore_mancanti']}h</div>", unsafe_allow_html=True)
                         elif metrics['ore_straordinario'] > 0:
-                            col3.markdown(f"<div style='color: #00ff00;'>🟢 Ore Straordinario: {metrics['ore_straordinario']}h</div>", unsafe_allow_html=True)
+                            st.markdown(f"<div style='padding: 20px; background: #333; border-radius: 10px; color: #00ff00; font-size: 1.2em;'>🟢 Ore Straordinario: {metrics['ore_straordinario']}h</div>", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
