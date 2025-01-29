@@ -384,10 +384,10 @@ def main():
                         col1.metric("Totale Ore Lavorate", f"{metrics['ore_mensili']} ore")
                         col2.metric("Ore Previste", f"{metrics['target_ore']} ore")
                         
-                                                if metrics['ore_mancanti'] > 0:
-                            col3.markdown(f"<div class='negative'>🟡 Ore Mancanti: {metrics['ore_mancanti']}h</div>", unsafe_allow_html=True)
+                        if metrics['ore_mancanti'] > 0:
+                            col3.markdown(f"<div style='color: #ffd700;'>🟡 Ore Mancanti: {metrics['ore_mancanti']}h</div>", unsafe_allow_html=True)
                         elif metrics['ore_straordinario'] > 0:
-                            col3.markdown(f"<div class='positive'>🟢 Ore Straordinario: {metrics['ore_straordinario']}h</div>", unsafe_allow_html=True)
+                            col3.markdown(f"<div style='color: #00ff00;'>🟢 Ore Straordinario: {metrics['ore_straordinario']}h</div>", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
