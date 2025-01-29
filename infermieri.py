@@ -352,7 +352,7 @@ def main():
                                     ore = metrics['ore_totali'][s]
                                     st.write(f"**{s}:** {count} ({ore} ore)")
                             with cols[2]:
-                                if i+2 < len(shift_items):
+                                    if i+2 < len(shift_items):
                                     s, count = shift_items[i+2]
                                     ore = metrics['ore_totali'][s]
                                     st.write(f"**{s}:** {count} ({ore} ore)")
@@ -363,9 +363,130 @@ def main():
                         st.write(f"**Festività:** {metrics['festivita_count']}")
                         if metrics['festivita_nomi']:
                             st.write(f"**Nomi festività:** {', '.join(metrics['festivita_nomi'])}")
+            else:
+                people_shifts = extract_from_excel(uploaded_file)
+        
+                if people_shifts:
+                    valid_people = {k: v for k, v in people_shifts.items() if len(v) > 0}
+                    
+                    if not valid_people:
+                        st.error("❌ Nessun dato rilevato nel documento!")
+                        return
+                        
+                    all_names = list(
+                        dict.fromkeys(
+                            [name for name in FIXED_NAMES if name in valid_people] +
+                            [name for name in people_shifts.keys() if name not in FIXED_NAMES and name in valid_people]
+                        )
+                    )
+                    
+                    st.subheader("👤 Selezione Personale")
+                    
+                    # Calcola lo stato delle ore per ogni persona
+                    name_status = {}
+                    for name in all_names:
+                        shifts = valid_people.get(name, [])
+                        if shifts:
+                            metrics = calculate_metrics(shifts, month, year)
+                            if metrics:
+                                if metrics['ore_mancanti'] > 0:
+                                    name_status[name] = 'negative'
+                                elif metrics['ore_straordinario'] > 0:
+                                    name_status[name] = 'positive'
+                                else:
+                                    name_status[name] = 'neutral'
+                    
+                    # Crea lista nomi con indicatori
+                    formatted_names = []
+                    for name in all_names:
+                        status = name_status.get(name, 'neutral')
+                        if status == 'negative':
+                            formatted_names.append(f"🔴 {name}")
+                        elif status == 'positive':
+                            formatted_names.append(f"🟢 {name}")
+                        else:
+                            formatted_names.append(f"⚪ {name}")
+                    
+                    selected_name = st.selectbox("Seleziona un collaboratore:", options=formatted_names)
+                    selected_name = selected_name[2:].strip()  # Rimuovi emoji + spazio (2 caratteri)
+                    
+                    shifts = valid_people.get(selected_name, [])
+                    
+                    if shifts:
+                        metrics = calculate_metrics(shifts, month, year)
+                        
+                        if metrics:
+                            display_month(month, year, metrics['festivita_nomi'])
+                        
+                            st.subheader(f"📅 Turni di {selected_name}")
+                            
+                            weekdays = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom']
+                            cols = st.columns(7)
+                            for i, day in enumerate(weekdays):
+                                with cols[i]:
+                                    st.markdown(f"<div style='color: #7f8fa6; text-align: center;'>{day}</div>", unsafe_allow_html=True)
+
+                            for week in metrics['weeks']:
+                                cols = st.columns(7)
+                                for i, (day_num, shift) in enumerate(week):
+                                    with cols[i]:
+                                        if day_num != 0:
+                                            bg_color = SHIFT_COLORS.get(shift, '#16213e')
+                                            st.markdown(
+                                                f"<div style='text-align: center; margin: 2px; padding: 8px; "
+                                                f"border-radius: 5px; background-color: {bg_color}; "
+                                                f"min-height: 50px; display: flex; flex-direction: column; "
+                                                f"justify-content: center; border: 1px solid #30475e;'>"
+                                                f"<div style='font-size: 0.8em; color: #666;'>{day_num}</div>"
+                                                f"<div style='font-size: 1.2em; color: {'#ffffff' if bg_color != '#16213e' else '#7f8fa6'}'>"
+                                                f"{shift}</div></div>",
+                                                unsafe_allow_html=True
+                                            )
+                                        else:
+                                            st.markdown("<div style='min-height:50px'></div>", unsafe_allow_html=True)
+                            
+                            if metrics:
+                                st.subheader("📊 Riepilogo Ore")
+                                
+                                col1, col2, col3 = st.columns(3)
+                                col1.metric("Totale Ore Lavorate", f"{metrics['ore_mensili']} ore")
+                                col2.metric("Ore Previste", f"{metrics['target_ore']} ore")
+                                
+                                if metrics['ore_mancanti'] > 0:
+                                    col3.markdown(f"<div class='negative'>🟡 Ore Mancanti: {metrics['ore_mancanti']}h</div>", unsafe_allow_html=True)
+                                elif metrics['ore_straordinario'] > 0:
+                                    col3.markdown(f"<div class='positive'>🟢 Ore Straordinario: {metrics['ore_straordinario']}h</div>", unsafe_allow_html=True)
+                                
+                                st.write("---")
+                                st.markdown("**Dettaglio Turni:**")
+                                cols = st.columns(3)
+                                shift_items = list(metrics['shift_counts'].items())
+                                
+                                for i in range(0, len(shift_items), 3):
+                                    with cols[0]:
+                                        if i < len(shift_items):
+                                            s, count = shift_items[i]
+                                            ore = metrics['ore_totali'][s]
+                                            st.write(f"**{s}:** {count} ({ore} ore)")
+                                    with cols[1]:
+                                        if i+1 < len(shift_items):
+                                            s, count = shift_items[i+1]
+                                            ore = metrics['ore_totali'][s]
+                                            st.write(f"**{s}:** {count} ({ore} ore)")
+                                    with cols[2]:
+                                        if i+2 < len(shift_items):
+                                            s, count = shift_items[i+2]
+                                            ore = metrics['ore_totali'][s]
+                                            st.write(f"**{s}:** {count} ({ore} ore)")
+                                
+                                st.write("---")
+                                st.write(f"**Giorni totali:** {metrics['days_in_month']}")
+                                st.write(f"**Domeniche:** {metrics['sundays']}")
+                                st.write(f"**Festività:** {metrics['festivita_count']}")
+                                if metrics['festivita_nomi']:
+                                    st.write(f"**Nomi festività:** {', '.join(metrics['festivita_nomi'])}")
         
         st.markdown("<div class='footer'>sviluppata da Gian M.</div>", unsafe_allow_html=True)
 
 if __name__ == '__main__':
     main()
-
