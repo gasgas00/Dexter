@@ -24,13 +24,21 @@ FIXED_NAMES = [
 
 ORE_MAP = {
     'M': 7, 'P': 7, 'N': 10, 'MP': 14,
-    'PN': 17, 'REC': -6, 'F': 6, 'S': 0, 'MAL': 6
+    'PN': 17, 'REC': -6, 'F': 6, 'S': 0, 'MAL': 6, '-': 0
 }
 
 SHIFT_COLORS = {
-    'M': '#87CEEB', 'P': '#ADD8E6', 'N': '#800080',  # Schiarito il blu del turno P
-    'R': '#00FF00', 'S': '#FFA07A', 'F': '#FFD700',
-    'PN': '#FF69B4', 'MP': '#9370DB', 'REC': '#D3D3D3', 'MAL': '#FF4444'
+    'M': '#00BFFF',  # Blu acceso
+    'P': '#FFA500',  # Arancione
+    'N': '#800080',  # Viola
+    'R': '#00FF00', 
+    'S': '#FFA07A',
+    'F': '#FFD700',
+    'PN': '#FF69B4',
+    'MP': '#9370DB',
+    'REC': '#D3D3D3',
+    'MAL': '#FF4444',
+    '-': '#333333'  # Grigio scuro per celle vuote
 }
 
 MONTH_COLORS = {
@@ -57,50 +65,7 @@ st.markdown("""
             color: #00ff9d !important;
             text-shadow: 0 0 10px #00ff9d88;
             text-align: center;
-            font-size: 8em; /* Ingrandito del doppio */
-        }
-        
-        .subheader {
-            font-family: 'Rajdhani', sans-serif;
-            color: #7f8fa6 !important;
-            text-align: center;
-            margin-top: -15px !important;
-        }
-        
-        .stSelectbox div div div input {
-            background-color: #16213e !important;
-            color: #e6e6e6 !important;
-        }
-        
-        .footer {
-            position: fixed;
-            bottom: 10px;
-            left: 10px;
-            color: #7f8fa6;
-            font-family: 'Rajdhani', sans-serif;
-            font-size: 1.5em;
-        }
-        
-        .negative {
-            color: #ff4444 !important;
-            font-weight: bold;
-        }
-        
-        .positive {
-            color: #00ff9d !important;
-            font-weight: bold;
-        }
-        
-        .instructions {
-            background-color: #1a1a2e;
-            padding: 15px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            color: #e6e6e6;
-        }
-        
-        .detail {
-            font-size: 1.5em; /* Aumentato la dimensione dei caratteri */
+            font-size: 8em;
         }
         
         .calendar-day {
@@ -108,6 +73,12 @@ st.markdown("""
             padding: 10px;
             border-radius: 5px;
             text-align: center;
+            font-size: 1.2em;
+        }
+        
+        .shift-select {
+            margin-top: 5px;
+            width: 100%;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -186,7 +157,7 @@ def extract_from_ics(ics_file):
                 if 'ASSENZA' in summary:
                     absences.append({
                         'date': component.get('dtstart').dt,
-                        'type': None  # Da definire dall'utente
+                        'type': None
                     })
                 elif any(turno in summary for turno in ['MATTINA', 'POMERIGGIO', 'NOTTE', 'SMONTO']):
                     shifts.append({
@@ -221,8 +192,9 @@ def calculate_metrics(shifts, month, year):
                 if day != 0 and weekday == 6:
                     sundays += 1
         
-        valid_shifts = shifts[:days_in_month]
-        shift_counts = {s: valid_shifts.count(s) for s in ORE_MAP}
+        # Filtra i turni validi escludendo '-'
+        valid_shifts = [s for s in shifts[:days_in_month] if s != '-']
+        shift_counts = {s: valid_shifts.count(s) for s in ORE_MAP if s != '-'}
         ore_totali = {s: count * ORE_MAP[s] for s, count in shift_counts.items()}
         
         ore_mensili = sum(ore for s, ore in ore_totali.items() if s not in ['R', 'S', 'REC'])
@@ -234,7 +206,7 @@ def calculate_metrics(shifts, month, year):
 
         cal = calendar.Calendar(firstweekday=0)
         month_weeks = cal.monthdayscalendar(year, month_num)
-        shifts_per_day = (valid_shifts + [''] * days_in_month)[:days_in_month]
+        shifts_per_day = (shifts[:days_in_month] + ['-'] * (days_in_month - len(shifts)))[:days_in_month]
         
         weeks = []
         for week in month_weeks:
@@ -243,7 +215,7 @@ def calculate_metrics(shifts, month, year):
                 if day == 0:
                     week_data.append((0, ''))
                 else:
-                    shift = shifts_per_day[day-1] if (day-1) < len(shifts_per_day) else ''
+                    shift = shifts_per_day[day-1] if (day-1) < len(shifts_per_day) else '-'
                     week_data.append((day, shift))
             weeks.append(week_data)
         
@@ -319,6 +291,7 @@ def main():
             if uploaded_file.type == "text/calendar":
                 shifts, absences = extract_from_ics(uploaded_file)
                 if shifts:
+                    st.info("Nota: Se i turni non coincidono con quelli effettivi o ci sono modifiche, clicca su una cella del calendario per modificare il turno e aggiornare i dati.")
                     st.subheader("📅 Turni")
                     display_month(month, year, [])
                     
@@ -332,31 +305,53 @@ def main():
                             )
                             absence['type'] = 'F' if 'Ferie' in absence_type else 'MAL'
                     
-                    # Calcola le metriche
                     shifts_list = [s['turno'] for s in shifts]
-                    metrics = calculate_metrics(shifts_list, month, year)
+                    month_num = list(MONTH_COLORS.keys()).index(month) + 1
+                    days_in_month = calendar.monthrange(year, month_num)[1]
+                    shifts_list = (shifts_list[:days_in_month] + ['-'] * (days_in_month - len(shifts_list)))[:days_in_month]
                     
-                    if metrics:
-                        st.subheader("📅 Calendario Turni")
-                        
-                        # Creazione del calendario
-                        cal = calendar.Calendar(firstweekday=0)
-                        month_weeks = cal.monthdayscalendar(year, list(MONTH_COLORS.keys()).index(month) + 1)
-                        
-                        for week in month_weeks:
-                            cols = st.columns(7)
-                            for i, day in enumerate(week):
-                                if day == 0:
-                                    cols[i].write("")
-                                else:
-                                    shift = shifts_list[day - 1] if (day - 1) < len(shifts_list) else ''
-                                    color = SHIFT_COLORS.get(shift, '#FFFFFF')
-                                    cols[i].markdown(
+                    key = ('ics', month, year)
+                    if 'edited_shifts' not in st.session_state:
+                        st.session_state.edited_shifts = {}
+                    if key not in st.session_state.edited_shifts:
+                        st.session_state.edited_shifts[key] = shifts_list.copy()
+                    current_shifts = st.session_state.edited_shifts[key]
+                    
+                    st.subheader("📅 Calendario Turni")
+                    cal = calendar.Calendar(firstweekday=0)
+                    month_weeks = cal.monthdayscalendar(year, list(MONTH_COLORS.keys()).index(month) + 1)
+                    
+                    for week in month_weeks:
+                        cols = st.columns(7)
+                        for i, day in enumerate(week):
+                            if day == 0:
+                                cols[i].write("")
+                            else:
+                                shift_index = day - 1
+                                current_shift = current_shifts[shift_index] if shift_index < len(current_shifts) else '-'
+                                color = SHIFT_COLORS.get(current_shift, '#FFFFFF')
+                                
+                                with cols[i]:
+                                    st.markdown(
                                         f"<div class='calendar-day' style='background-color: {color};'>"
-                                        f"<strong>{day}</strong><br>{shift}</div>",
+                                        f"<strong>{day}</strong></div>",
                                         unsafe_allow_html=True
                                     )
-                        
+                                    options = ['-'] + [k for k in ORE_MAP.keys() if k != '-']
+                                    default_index = options.index(current_shift) if current_shift in options else 0
+                                    new_shift = st.selectbox(
+                                        label=f"Turno {day}",
+                                        options=options,
+                                        index=default_index,
+                                        key=f"shift_ics_{day}",
+                                        label_visibility="collapsed"
+                                    )
+                                    if new_shift != current_shift:
+                                        st.session_state.edited_shifts[key][shift_index] = new_shift
+                    
+                    metrics = calculate_metrics(current_shifts, month, year)
+                    
+                    if metrics:
                         st.write("---")
                         st.subheader("📊 Grafico a Torta - Dettaglio Turni")
                         shift_counts = metrics['shift_counts']
@@ -377,28 +372,29 @@ def main():
                             col3.markdown(f"<div class='negative'>🟡 Ore Mancanti: {metrics['ore_mancanti']}h</div>", unsafe_allow_html=True)
                         elif metrics['ore_straordinario'] > 0:
                             col3.markdown(f"<div class='positive'>🟢 Ore Straordinario: {metrics['ore_straordinario']}h</div>", unsafe_allow_html=True)
-                        
+
                         st.write("---")
                         st.markdown("**Dettaglio Turni:**", unsafe_allow_html=True)
-                        cols = st.columns(3)
                         shift_items = list(metrics['shift_counts'].items())
-                        
-                        for i in range(0, len(shift_items), 3):
-                            with cols[0]:
-                                if i < len(shift_items):
-                                    s, count = shift_items[i]
+                        num_columns = 3
+                        num_rows = (len(shift_items) + num_columns - 1) // num_columns
+
+                        for row in range(num_rows):
+                            cols = st.columns(num_columns)
+                            for col in range(num_columns):
+                                index = row * num_columns + col
+                                if index < len(shift_items):
+                                    s, count = shift_items[index]
                                     ore = metrics['ore_totali'][s]
-                                    st.markdown(f"<div class='detail'>**{s}:** {count} ({ore} ore)</div>", unsafe_allow_html=True)
-                            with cols[1]:
-                                if i+1 < len(shift_items):
-                                    s, count = shift_items[i+1]
-                                    ore = metrics['ore_totali'][s]
-                                    st.markdown(f"<div class='detail'>**{s}:** {count} ({ore} ore)</div>", unsafe_allow_html=True)
-                            with cols[2]:
-                                if i+2 < len(shift_items):
-                                    s, count = shift_items[i+2]
-                                    ore = metrics['ore_totali'][s]
-                                    st.markdown(f"<div class='detail'>**{s}:** {count} ({ore} ore)</div>", unsafe_allow_html=True)
+                                    color = SHIFT_COLORS.get(s, '#FFFFFF')
+                                    with cols[col]:
+                                        st.markdown(
+                                            f"<div style='background-color: {color}; padding: 10px; border-radius: 5px; margin: 5px; text-align: center;'>"
+                                            f"<strong style='font-size: 1.2em;'>{s}</strong><br>"
+                                            f"Turni: {count}<br>"
+                                            f"Ore: {ore}</div>",
+                                            unsafe_allow_html=True
+                                        )
                         
                         st.write("---")
                         st.write(f"**Giorni totali:** {metrics['days_in_month']}")
@@ -406,38 +402,63 @@ def main():
                         st.write(f"**Festività:** {metrics['festivita_count']}")
                         if metrics['festivita_nomi']:
                             st.write(f"**Festività:** {', '.join(metrics['festivita_nomi'])}")
-                        
+            
             else:
                 people_shifts = extract_from_excel(uploaded_file)
                 if people_shifts:
+                    st.info("Nota: Se i turni non coincidono con quelli effettivi o ci sono modifiche, clicca su una cella del calendario per modificare il turno e aggiornare i dati.")
                     st.subheader("📅 Turni Rilevati")
                     display_month(month, year, [])
                     
                     selected_operator = st.selectbox("Seleziona l'operatore:", list(people_shifts.keys()))
-                    shifts = people_shifts[selected_operator]
-                    metrics = calculate_metrics(shifts, month, year)
+                    original_shifts = people_shifts[selected_operator]
                     
-                    if metrics:
-                        st.subheader("📅 Calendario Turni")
-                        
-                        # Creazione del calendario
-                        cal = calendar.Calendar(firstweekday=0)
-                        month_weeks = cal.monthdayscalendar(year, list(MONTH_COLORS.keys()).index(month) + 1)
-                        
-                        for week in month_weeks:
-                            cols = st.columns(7)
-                            for i, day in enumerate(week):
-                                if day == 0:
-                                    cols[i].write("")
-                                else:
-                                    shift = shifts[day - 1] if (day - 1) < len(shifts) else ''
-                                    color = SHIFT_COLORS.get(shift, '#FFFFFF')
-                                    cols[i].markdown(
+                    month_num = list(MONTH_COLORS.keys()).index(month) + 1
+                    days_in_month = calendar.monthrange(year, month_num)[1]
+                    original_shifts_padded = (original_shifts[:days_in_month] + ['-'] * (days_in_month - len(original_shifts)))[:days_in_month]
+                    
+                    key = (selected_operator, month, year)
+                    if 'edited_shifts' not in st.session_state:
+                        st.session_state.edited_shifts = {}
+                    if key not in st.session_state.edited_shifts:
+                        st.session_state.edited_shifts[key] = original_shifts_padded.copy()
+                    current_shifts = st.session_state.edited_shifts[key]
+                    
+                    st.subheader("📅 Calendario Turni")
+                    cal = calendar.Calendar(firstweekday=0)
+                    month_weeks = cal.monthdayscalendar(year, list(MONTH_COLORS.keys()).index(month) + 1)
+                    
+                    for week in month_weeks:
+                        cols = st.columns(7)
+                        for i, day in enumerate(week):
+                            if day == 0:
+                                cols[i].write("")
+                            else:
+                                shift_index = day - 1
+                                current_shift = current_shifts[shift_index] if shift_index < len(current_shifts) else '-'
+                                color = SHIFT_COLORS.get(current_shift, '#FFFFFF')
+                                
+                                with cols[i]:
+                                    st.markdown(
                                         f"<div class='calendar-day' style='background-color: {color};'>"
-                                        f"<strong>{day}</strong><br>{shift}</div>",
+                                        f"<strong>{day}</strong></div>",
                                         unsafe_allow_html=True
                                     )
-                        
+                                    options = ['-'] + [k for k in ORE_MAP.keys() if k != '-']
+                                    default_index = options.index(current_shift) if current_shift in options else 0
+                                    new_shift = st.selectbox(
+                                        label=f"Turno {day}",
+                                        options=options,
+                                        index=default_index,
+                                        key=f"shift_{key}_{day}",
+                                        label_visibility="collapsed"
+                                    )
+                                    if new_shift != current_shift:
+                                        st.session_state.edited_shifts[key][shift_index] = new_shift
+                    
+                    metrics = calculate_metrics(current_shifts, month, year)
+                    
+                    if metrics:
                         st.write("---")
                         st.subheader("📊 Grafico a Torta - Dettaglio Turni")
                         shift_counts = metrics['shift_counts']
@@ -461,25 +482,26 @@ def main():
                         
                         st.write("---")
                         st.markdown("**Dettaglio Turni:**", unsafe_allow_html=True)
-                        cols = st.columns(3)
                         shift_items = list(metrics['shift_counts'].items())
-                        
-                        for i in range(0, len(shift_items), 3):
-                            with cols[0]:
-                                if i < len(shift_items):
-                                    s, count = shift_items[i]
+                        num_columns = 3
+                        num_rows = (len(shift_items) + num_columns - 1) // num_columns
+
+                        for row in range(num_rows):
+                            cols = st.columns(num_columns)
+                            for col in range(num_columns):
+                                index = row * num_columns + col
+                                if index < len(shift_items):
+                                    s, count = shift_items[index]
                                     ore = metrics['ore_totali'][s]
-                                    st.markdown(f"<div class='detail'>**{s}:** {count} ({ore} ore)</div>", unsafe_allow_html=True)
-                            with cols[1]:
-                                if i+1 < len(shift_items):
-                                    s, count = shift_items[i+1]
-                                    ore = metrics['ore_totali'][s]
-                                    st.markdown(f"<div class='detail'>**{s}:** {count} ({ore} ore)</div>", unsafe_allow_html=True)
-                            with cols[2]:
-                                if i+2 < len(shift_items):
-                                    s, count = shift_items[i+2]
-                                    ore = metrics['ore_totali'][s]
-                                    st.markdown(f"<div class='detail'>**{s}:** {count} ({ore} ore)</div>", unsafe_allow_html=True)
+                                    color = SHIFT_COLORS.get(s, '#FFFFFF')
+                                    with cols[col]:
+                                        st.markdown(
+                                            f"<div style='background-color: {color}; padding: 10px; border-radius: 5px; margin: 5px; text-align: center;'>"
+                                            f"<strong style='font-size: 1.2em;'>{s}</strong><br>"
+                                            f"Turni: {count}<br>"
+                                            f"Ore: {ore}</div>",
+                                            unsafe_allow_html=True
+                                        )
                         
                         st.write("---")
                         st.write(f"**Giorni totali:** {metrics['days_in_month']}")
@@ -487,8 +509,6 @@ def main():
                         st.write(f"**Festività:** {metrics['festivita_count']}")
                         if metrics['festivita_nomi']:
                             st.write(f"**Festività:** {', '.join(metrics['festivita_nomi'])}")
-    
-    
 
 if __name__ == "__main__":
     main()
