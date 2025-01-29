@@ -4,12 +4,12 @@ import numpy as np
 from PIL import Image
 import re
 import pandas as pd
-import pdfplumber
 import calendar
 from dateutil.easter import easter
 from datetime import datetime
 from io import BytesIO
 import pyexcel
+from icalendar import Calendar, Event
 
 # Configurazione Tesseract per macOS
 pytesseract.pytesseract.tesseract_cmd = '/usr/local/bin/tesseract'
@@ -23,13 +23,13 @@ FIXED_NAMES = [
 
 ORE_MAP = {
     'M': 7, 'P': 7, 'N': 10, 'MP': 14,
-    'PN': 17, 'REC': -6, 'F': 6, 'S': 0
+    'PN': 17, 'REC': -6, 'F': 6, 'S': 0, 'MAL': 6
 }
 
 SHIFT_COLORS = {
-    'M': '#FFCCCB', 'P': '#ADD8E6', 'N': '#90EE90',
-    'R': '#D3D3D3', 'S': '#FFA07A', 'F': '#FFD700',
-    'PN': '#FF69B4', 'MP': '#9370DB', 'REC': '#D3D3D3'
+    'M': '#87CEEB', 'P': '#0000FF', 'N': '#800080',
+    'R': '#008000', 'S': '#FFA07A', 'F': '#FFD700',
+    'PN': '#FF69B4', 'MP': '#9370DB', 'REC': '#D3D3D3', 'MAL': '#FF4444'
 }
 
 MONTH_COLORS = {
@@ -47,7 +47,7 @@ st.markdown("""
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500&family=Rajdhani:wght@500&display=swap');
         
         .main {
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
             color: #e6e6e6;
         }
         
@@ -56,6 +56,7 @@ st.markdown("""
             color: #00ff9d !important;
             text-shadow: 0 0 10px #00ff9d88;
             text-align: center;
+            font-size: 4em;
         }
         
         .subheader {
@@ -87,6 +88,14 @@ st.markdown("""
         .positive {
             color: #00ff9d !important;
             font-weight: bold;
+        }
+        
+        .instructions {
+            background-color: #1a1a2e;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            color: #e6e6e6;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -153,41 +162,31 @@ def extract_from_excel(excel_file):
         st.error(f"Errore lettura Excel: {str(e)}")
         return {}
 
-def extract_from_pdf(pdf_file):
+def extract_from_ics(ics_file):
     try:
-        people_shifts = {}
-        current_name = None
-        
-        with pdfplumber.open(pdf_file) as pdf:
-            for page in pdf.pages:
-                text = page.extract_text()
-                tables = page.extract_tables()
-                
-                for line in text.split('\n'):
-                    clean_line = normalize_name(line)
-                    if is_valid_name(clean_line):
-                        fixed_match = next((fn for fn in FIXED_NAMES if fn in clean_line), None)
-                        current_name = fixed_match if fixed_match else clean_line
-                
-                for table in tables:
-                    for row in table:
-                        for cell in row:
-                            if not cell:
-                                continue
-                            clean_cell = normalize_name(str(cell))
-                            if is_valid_name(clean_line):
-                                fixed_match = next((fn for fn in FIXED_NAMES if fn in clean_line), None)
-                                current_name = fixed_match if fixed_match else clean_line
-                            elif current_name and re.match(r'^[MPNRECSF]{1,2}$', str(cell).strip().upper()):
-                                if current_name not in people_shifts:
-                                    people_shifts[current_name] = []
-                                people_shifts[current_name].append(str(cell).strip().upper())
-        
-        return people_shifts
-        
+        cal = Calendar.from_ical(ics_file.read())
+        shifts = []
+        absences = []
+
+        for component in cal.walk():
+            if component.name == "VEVENT":
+                summary = component.get('summary', '').upper()
+                if 'ASSENZA' in summary:
+                    absences.append({
+                        'date': component.get('dtstart').dt,
+                        'type': None  # Da definire dall'utente
+                    })
+                elif any(turno in summary for turno in ['MATTINA', 'POMERIGGIO', 'NOTTE', 'SMONTO']):
+                    shifts.append({
+                        'date': component.get('dtstart').dt,
+                        'turno': 'M' if 'MATTINA' in summary else 'P' if 'POMERIGGIO' in summary else 'N' if 'NOTTE' in summary else 'S'
+                    })
+
+        return shifts, absences
+
     except Exception as e:
-        st.error(f"Errore lettura PDF: {str(e)}")
-        return {}
+        st.error(f"Errore lettura ICS: {str(e)}")
+        return [], []
 
 def calculate_metrics(shifts, month, year):
     try:
@@ -273,6 +272,19 @@ def main():
     st.markdown("<h1>Eureka!</h1>", unsafe_allow_html=True)
     st.markdown("<div class='subheader'>L'App di analisi turni dell'UTIC</div>", unsafe_allow_html=True)
     
+    st.markdown("""
+        <div class='instructions'>
+            <strong>ISTRUZIONI PER ZUCCHETTI:</strong>
+            <ol>
+                <li>Entrare su Zucchetti</li>
+                <li>Cliccare in alto a sinistra sul menu rappresentato dai quadratini ed entrare su Zscheduling</li>
+                <li>In alto comparirà la dicitura "Calendario Operatore", cliccare su essa</li>
+                <li><strong>Cambiare la visualizzazione da "Settimanale" a "Mensile"</strong></li>
+                <li>Cliccare su "Esporta" e scaricare il file in formato ICS</li>
+            </ol>
+        </div>
+    """, unsafe_allow_html=True)
+    
     col1, col2 = st.columns(2)
     with col1:
         month = st.selectbox(
@@ -288,97 +300,32 @@ def main():
             value=datetime.now().year
         )
     
-    uploaded_file = st.file_uploader("Carica il planning turni", type=['pdf', 'xlsx', 'xls'])
+    uploaded_file = st.file_uploader("Carica il planning turni", type=['xlsx', 'xls', 'ics'])
     
     if uploaded_file:
         with st.spinner('Elaborazione in corso...'):
-            if uploaded_file.type == "application/pdf":
-                people_shifts = extract_from_pdf(uploaded_file)
-            else:
-                people_shifts = extract_from_excel(uploaded_file)
-        
-        if people_shifts:
-            valid_people = {k: v for k, v in people_shifts.items() if len(v) > 0}
-            
-            if not valid_people:
-                st.error("❌ Nessun dato rilevato nel documento!")
-                return
-                
-            all_names = list(
-                dict.fromkeys(
-                    [name for name in FIXED_NAMES if name in valid_people] +
-                    [name for name in people_shifts.keys() if name not in FIXED_NAMES and name in valid_people]
-                )
-            )
-            
-            st.subheader("👤 Selezione Personale")
-            
-            # Calcola lo stato delle ore per ogni persona
-            name_status = {}
-            for name in all_names:
-                shifts = valid_people.get(name, [])
+            if uploaded_file.type == "text/calendar":
+                shifts, absences = extract_from_ics(uploaded_file)
                 if shifts:
-                    metrics = calculate_metrics(shifts, month, year)
-                    if metrics:
-                        if metrics['ore_mancanti'] > 0:
-                            name_status[name] = 'negative'
-                        elif metrics['ore_straordinario'] > 0:
-                            name_status[name] = 'positive'
-                        else:
-                            name_status[name] = 'neutral'
-            
-            # Crea lista nomi con indicatori
-            formatted_names = []
-            for name in all_names:
-                status = name_status.get(name, 'neutral')
-                if status == 'negative':
-                    formatted_names.append(f"🔴 {name}")
-                elif status == 'positive':
-                    formatted_names.append(f"🟢 {name}")
-                else:
-                    formatted_names.append(f"⚪ {name}")
-            
-            selected_name = st.selectbox("Seleziona un collaboratore:", options=formatted_names)
-            selected_name = selected_name[2:].strip()  # Fix: Rimuovi emoji + spazio (2 caratteri)
-            
-            shifts = valid_people.get(selected_name, [])
-            
-            if shifts:
-                metrics = calculate_metrics(shifts, month, year)
-                
-                if metrics:
-                    display_month(month, year, metrics['festivita_nomi'])
-                
-                    st.subheader(f"📅 Turni di {selected_name}")
+                    st.subheader("📅 Turni")
+                    display_month(month, year, [])
                     
-                    weekdays = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom']
-                    cols = st.columns(7)
-                    for i, day in enumerate(weekdays):
-                        with cols[i]:
-                            st.markdown(f"<div style='color: #7f8fa6; text-align: center;'>{day}</div>", unsafe_allow_html=True)
-
-                    for week in metrics['weeks']:
-                        cols = st.columns(7)
-                        for i, (day_num, shift) in enumerate(week):
-                            with cols[i]:
-                                if day_num != 0:
-                                    bg_color = SHIFT_COLORS.get(shift, '#16213e')
-                                    st.markdown(
-                                        f"<div style='text-align: center; margin: 2px; padding: 8px; "
-                                        f"border-radius: 5px; background-color: {bg_color}; "
-                                        f"min-height: 50px; display: flex; flex-direction: column; "
-                                        f"justify-content: center; border: 1px solid #30475e;'>"
-                                        f"<div style='font-size: 0.8em; color: #666;'>{day_num}</div>"
-                                        f"<div style='font-size: 1.2em; color: {'#ffffff' if bg_color != '#16213e' else '#7f8fa6'}'>"
-                                        f"{shift}</div></div>",
-                                        unsafe_allow_html=True
-                                    )
-                                else:
-                                    st.markdown("<div style='min-height:50px'></div>", unsafe_allow_html=True)
+                    if absences:
+                        st.warning("⚠️ Sono presenti delle assenze. Seleziona il tipo di assenza per ciascuna.")
+                        for absence in absences:
+                            absence_date = absence['date'].strftime('%Y-%m-%d')
+                            absence_type = st.selectbox(
+                                f"Tipo di assenza per il giorno {absence_date}:",
+                                ['Ferie (F)', 'Malattia (MAL)']
+                            )
+                            absence['type'] = 'F' if 'Ferie' in absence_type else 'MAL'
+                    
+                    # Calcola le metriche
+                    shifts_list = [s['turno'] for s in shifts]
+                    metrics = calculate_metrics(shifts_list, month, year)
                     
                     if metrics:
                         st.subheader("📊 Riepilogo Ore")
-                        
                         col1, col2, col3 = st.columns(3)
                         col1.metric("Totale Ore Lavorate", f"{metrics['ore_mensili']} ore")
                         col2.metric("Ore Previste", f"{metrics['target_ore']} ore")
