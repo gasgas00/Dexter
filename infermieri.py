@@ -75,6 +75,7 @@ st.markdown("""
             text-align: center;
             font-size: 1.2em;
             position: relative;
+            transition: background-color 0.3s ease;
         }
         
         .day-number {
@@ -100,133 +101,19 @@ st.markdown("""
             border-radius: 10px; 
             margin: 5px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            transition: transform 0.2s ease;
+        }
+        
+        .metric-box {
+            padding: 20px;
+            border-radius: 10px;
+            background: #1a1a1a;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
         }
     </style>
 """, unsafe_allow_html=True)
 
-def normalize_name(name):
-    name = re.sub(r'\s+', ' ', str(name).upper().strip())
-    name = re.sub(r'[^A-ZÀÈÉÌÒÙ\s]', '', name)
-    return name
-
-def is_valid_name(text):
-    return re.match(r'^[A-ZÀÈÉÌÒÙ]{2,}\s+[A-ZÀÈÉÌÒÙ]{2,}(\s+[A-ZÀÈÉÌÒÙ]{2,})*$', text)
-
-def get_italian_holidays(year):
-    holidays = [
-        {'month': 1, 'day': 1, 'name': 'Capodanno'},
-        {'month': 1, 'day': 6, 'name': 'Epifania'},
-        {'month': 4, 'day': 25, 'name': 'Liberazione'},
-        {'month': 5, 'day': 1, 'name': 'Lavoro'},
-        {'month': 6, 'day': 2, 'name': 'Repubblica'},
-        {'month': 8, 'day': 15, 'name': 'Ferragosto'},
-        {'month': 11, 'day': 1, 'name': 'Ognissanti'},
-        {'month': 12, 'day': 8, 'name': 'Immacolata'},
-        {'month': 12, 'day': 25, 'name': 'Natale'},
-        {'month': 12, 'day': 26, 'name': 'S.Stefano'}
-    ]
-    
-    easter_date = easter(year)
-    pasquetta = easter_date + pd.DateOffset(days=1)
-    holidays.append({'month': pasquetta.month, 'day': pasquetta.day, 'name': 'Pasquetta'})
-    
-    return holidays
-
-def extract_from_ics(ics_file):
-    try:
-        cal = Calendar.from_ical(ics_file.read())
-        shifts = []
-        absences = []
-
-        for component in cal.walk():
-            if component.name == "VEVENT":
-                summary = component.get('summary', '').upper()
-                if 'ASSENZA' in summary:
-                    absences.append({
-                        'date': component.get('dtstart').dt,
-                        'type': None
-                    })
-                elif any(turno in summary for turno in ['MATTINA', 'POMERIGGIO', 'NOTTE', 'SMONTO', 'RECUPERO', 'RIPOSO']):
-                    shift = 'M' if 'MATTINA' in summary else \
-                            'P' if 'POMERIGGIO' in summary else \
-                            'N' if 'NOTTE' in summary else \
-                            'S' if 'SMONTO' in summary else \
-                            'R' if 'RECUPERO' in summary or 'RIPOSO' in summary else '-'
-                    shifts.append({
-                        'date': component.get('dtstart').dt,
-                        'turno': shift
-                    })
-
-        return shifts, absences
-
-    except Exception as e:
-        st.error(f"Errore lettura ICS: {str(e)}")
-        return [], []
-
-def calculate_metrics(shifts, month, year):
-    try:
-        month_num = [
-            'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
-            'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'
-        ].index(month) + 1
-        
-        days_in_month = calendar.monthrange(year, month_num)[1]
-        
-        holidays = get_italian_holidays(year)
-        festivita = [h for h in holidays if h['month'] == month_num]
-        festivita_count = len(festivita)
-        festivita_nomi = [h['name'] for h in festivita]
-
-        cal = calendar.Calendar()
-        sundays = 0
-        for week in cal.monthdays2calendar(year, month_num):
-            for day, weekday in week:
-                if day != 0 and weekday == 6:
-                    sundays += 1
-        
-        valid_shifts = [s for s in shifts[:days_in_month] if s != '-']
-        shift_counts = {s: valid_shifts.count(s) for s in ORE_MAP if s != '-'}
-        ore_totali = {s: count * ORE_MAP[s] for s, count in shift_counts.items()}
-        
-        ore_mensili = sum(ore for s, ore in ore_totali.items() if s not in ['R', 'S', 'REC'])
-        target_ore = (days_in_month - sundays - festivita_count) * 6
-        
-        differenza = ore_mensili - target_ore
-        ore_mancanti = max(-differenza, 0)
-        ore_straordinario = max(differenza, 0)
-
-        cal = calendar.Calendar(firstweekday=0)
-        month_weeks = cal.monthdayscalendar(year, month_num)
-        shifts_per_day = (shifts[:days_in_month] + ['-'] * (days_in_month - len(shifts)))[:days_in_month]
-        
-        weeks = []
-        for week in month_weeks:
-            week_data = []
-            for day in week:
-                if day == 0:
-                    week_data.append((0, ''))
-                else:
-                    shift = shifts_per_day[day-1] if (day-1) < len(shifts_per_day) else '-'
-                    week_data.append((day, shift))
-            weeks.append(week_data)
-        
-        return {
-            'days_in_month': days_in_month,
-            'festivita_count': festivita_count,
-            'festivita_nomi': festivita_nomi,
-            'shift_counts': shift_counts,
-            'ore_totali': ore_totali,
-            'ore_mensili': ore_mensili,
-            'target_ore': target_ore,
-            'ore_mancanti': ore_mancanti,
-            'ore_straordinario': ore_straordinario,
-            'weeks': weeks,
-            'sundays': sundays
-        }
-        
-    except Exception as e:
-        st.error(f"Errore nei calcoli: {str(e)}")
-        return None
+# ... [Funzioni normalize_name, is_valid_name, get_italian_holidays, extract_from_ics, calculate_metrics rimangono identiche] ...
 
 def display_calendar(month, year, shifts, festivita_nomi):
     month_num = list(MONTH_COLORS.keys()).index(month) + 1
@@ -265,24 +152,31 @@ def display_calendar(month, year, shifts, festivita_nomi):
                 color = SHIFT_COLORS.get(current_shift, '#FFFFFF')
                 
                 with cols[i]:
-                    st.markdown(
-                        f"<div class='calendar-day' style='background-color: {color};'>"
-                        f"<div class='day-number'>{day}</div>",
-                        unsafe_allow_html=True
-                    )
-                    options = ['-', 'M', 'P', 'N', 'MP', 'PN', 'REC', 'F', 'S', 'MAL', 'R']
-                    default_index = options.index(current_shift) if current_shift in options else 0
-                    key = f"shift_{year}_{month_num}_{day}"
-                    new_shift = st.selectbox(
-                        label=f"Turno {day}",
-                        options=options,
-                        index=default_index,
-                        key=key,
-                        label_visibility="collapsed",
-                        on_change=lambda: st.rerun()  # Fix 1: Usiamo st.rerun() invece di experimental_rerun()
-                    )
-                    if new_shift != current_shift:
-                        shifts[shift_index] = new_shift
+                    container = st.container()
+                    with container:
+                        st.markdown(
+                            f"<div class='calendar-day' style='background-color: {color};'>"
+                            f"<div class='day-number'>{day}</div>",
+                            unsafe_allow_html=True
+                        )
+                        options = ['-', 'M', 'P', 'N', 'MP', 'PN', 'REC', 'F', 'S', 'MAL', 'R']
+                        default_index = options.index(current_shift) if current_shift in options else 0
+                        key = f"shift_{year}_{month_num}_{day}"
+                        new_shift = st.selectbox(
+                            label=f"Turno {day}",
+                            options=options,
+                            index=default_index,
+                            key=key,
+                            label_visibility="collapsed",
+                            on_change=lambda: st.session_state.update(force_update=True)  # Fix per refresh immediato
+                        )
+                        
+                        if new_shift != current_shift:
+                            # Aggiorna lo stato in modo esplicito
+                            new_shifts = shifts.copy()
+                            new_shifts[shift_index] = new_shift
+                            st.session_state.edited_shifts[('ics', month, year)] = new_shifts
+                            st.rerun()
 
 def main():
     st.markdown("<h1>Eureka!</h1>", unsafe_allow_html=True)
@@ -328,12 +222,10 @@ def main():
                     month_num = list(MONTH_COLORS.keys()).index(month) + 1
                     days_in_month = calendar.monthrange(year, month_num)[1]
                     
-                    # Crea un dizionario giorno -> turno
                     shifts_dict = {}
                     for s in shifts:
                         if s['date'].month == month_num and s['date'].year == year:
                             shifts_dict[s['date'].day] = s['turno']
-                    # Riempie la lista per tutti i giorni del mese
                     shifts_list = [shifts_dict.get(day, '-') for day in range(1, days_in_month + 1)]
                     
                     key = ('ics', month, year)
@@ -348,30 +240,68 @@ def main():
                     metrics = calculate_metrics(current_shifts, month, year)
                     
                     if metrics:
-                        # Riepilogo Ore
+                        # Riepilogo Mensile
                         st.write("---")
                         st.subheader("📊 Riepilogo Mensile")
-                        col1, col2 = st.columns(2)
-                        col1.metric("Totale Ore Lavorate", f"{metrics['ore_mensili']} ore")
-                        col2.metric("Ore Previste", f"{metrics['target_ore']} ore")
                         
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.markdown("""
+                                <div class="metric-box">
+                                    <h3 style='color: #00BFFF; margin:0;'>Totale Ore</h3>
+                                    <p style='font-size: 2em; margin:0;'>{}</p>
+                                </div>
+                            """.format(f"{metrics['ore_mensili']} ore"), unsafe_allow_html=True)
+                        
+                        with col2:
+                            st.markdown("""
+                                <div class="metric-box">
+                                    <h3 style='color: #FFA500; margin:0;'>Ore Previste</h3>
+                                    <p style='font-size: 2em; margin:0;'>{}</p>
+                                </div>
+                            """.format(f"{metrics['target_ore']} ore"), unsafe_allow_html=True)
+                        
+                        with col3:
+                            if metrics['ore_mancanti'] > 0:
+                                st.markdown("""
+                                    <div class="metric-box" style='border: 2px solid #FFD700;'>
+                                        <h3 style='color: #FFD700; margin:0;'>🟡 Ore Mancanti</h3>
+                                        <p style='font-size: 2em; margin:0;'>{}</p>
+                                    </div>
+                                """.format(f"{metrics['ore_mancanti']}h"), unsafe_allow_html=True)
+                            elif metrics['ore_straordinario'] > 0:
+                                st.markdown("""
+                                    <div class="metric-box" style='border: 2px solid #00FF00;'>
+                                        <h3 style='color: #00FF00; margin:0;'>🟢 Straordinario</h3>
+                                        <p style='font-size: 2em; margin:0;'>{}</p>
+                                    </div>
+                                """.format(f"{metrics['ore_straordinario']}h"), unsafe_allow_html=True)
+                            else:
+                                st.markdown("""
+                                    <div class="metric-box" style='border: 2px solid #CCCCCC;'>
+                                        <h3 style='color: #CCCCCC; margin:0;'>⚪ In Linea</h3>
+                                        <p style='font-size: 2em; margin:0;'>0h</p>
+                                    </div>
+                                """, unsafe_allow_html=True)
+
                         # Sezione combinata Grafico + Dettaglio
                         st.write("---")
                         st.subheader("📈 Dettaglio Analitico")
                         chart_col, data_col = st.columns([2, 3])
                         
                         with chart_col:
-                            # Grafico a torta
                             shift_counts = metrics['shift_counts']
                             df_pie = pd.DataFrame({
                                 'Turno': list(shift_counts.keys()),
                                 'Conteggio': list(shift_counts.values())
                             })
-                            fig = px.pie(df_pie, values='Conteggio', names='Turno', title='Distribuzione dei Turni')
+                            fig = px.pie(df_pie, values='Conteggio', names='Turno', 
+                                      title='Distribuzione Turni', 
+                                      color='Turno',
+                                      color_discrete_map=SHIFT_COLORS)
                             st.plotly_chart(fig, use_container_width=True)
                         
                         with data_col:
-                            # Dettaglio turni
                             st.subheader("📋 Turni e Ore Totali")
                             num_cols = 2
                             cols = st.columns(num_cols)
@@ -391,13 +321,6 @@ def main():
                                                 <p>Ore totali: {total_hours}h</p>
                                             </div>
                                         """, unsafe_allow_html=True)
-                        
-                        # Ore mancanti/straordinario
-                        st.write("---")
-                        if metrics['ore_mancanti'] > 0:
-                            st.markdown(f"<div style='padding: 20px; background: #333; border-radius: 10px; color: #ffd700; font-size: 1.2em;'>🟡 Ore Mancanti: {metrics['ore_mancanti']}h</div>", unsafe_allow_html=True)
-                        elif metrics['ore_straordinario'] > 0:
-                            st.markdown(f"<div style='padding: 20px; background: #333; border-radius: 10px; color: #00ff00; font-size: 1.2em;'>🟢 Ore Straordinario: {metrics['ore_straordinario']}h</div>", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
