@@ -488,7 +488,7 @@ def main():
                         if metrics['festivita_nomi']:
                             st.write(f"**Festività:** {', '.join(metrics['festivita_nomi'])}")
     
-    st.markdown("<div class='footer'>App creata da Gianluca M.<br>EUREKA!<br>L'App per analizzare i turni degli infermieri</div>", unsafe_allow_html=True)
+    
 
 if __name__ == "__main__":
     main()
