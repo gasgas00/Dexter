@@ -24,7 +24,7 @@ FIXED_NAMES = [
 
 ORE_MAP = {
     'M': 7, 'P': 7, 'N': 10, 'MP': 14,
-    'PN': 17, 'REC': -6, 'F': 6, 'S': 0, 'MAL': 6, '-': 0
+    'PN': 17, 'REC': -6, 'F': 6, 'S': 0, 'MAL': 6, '-': 0, 'R': 0
 }
 
 SHIFT_COLORS = {
@@ -74,10 +74,29 @@ st.markdown("""
             border-radius: 5px;
             text-align: center;
             font-size: 1.2em;
+            position: relative;
+        }
+        
+        .day-number {
+            position: absolute;
+            top: 5px;
+            left: 5px;
+            font-size: 0.8em;
+            color: #ffffff;
+        }
+        
+        .weekday-header {
+            font-weight: bold;
+            text-align: center;
+            padding: 10px;
+            background-color: #444444;
+            color: white;
+            border-radius: 5px;
+            margin: 2px;
         }
         
         .shift-select {
-            margin-top: 5px;
+            margin-top: 20px;
             width: 100%;
         }
     </style>
@@ -111,40 +130,6 @@ def get_italian_holidays(year):
     
     return holidays
 
-def extract_from_excel(excel_file):
-    """Gestisce sia XLS che XLSX con pyexcel e openpyxl"""
-    try:
-        content = excel_file.read()
-        excel_file.seek(0)
-        
-        if content.startswith(b'\xD0\xCF\x11\xE0'):
-            sheet = pyexcel.get_sheet(file_type='xls', file_stream=BytesIO(content))
-            df = pd.DataFrame(sheet.array)
-        else:
-            df = pd.read_excel(excel_file, header=None, engine='openpyxl')
-            
-        people_shifts = {}
-        current_name = None
-        
-        for idx, row in df.iterrows():
-            for cell in row:
-                if pd.isna(cell):
-                    continue
-                clean_cell = normalize_name(str(cell))
-                if is_valid_name(clean_cell):
-                    fixed_match = next((fn for fn in FIXED_NAMES if fn in clean_cell), None)
-                    current_name = fixed_match if fixed_match else clean_cell
-                elif current_name and re.match(r'^[MPNRECSF]{1,2}$', str(cell).strip().upper()):
-                    if current_name not in people_shifts:
-                        people_shifts[current_name] = []
-                    people_shifts[current_name].append(str(cell).strip().upper())
-        
-        return people_shifts
-        
-    except Exception as e:
-        st.error(f"Errore lettura Excel: {str(e)}")
-        return {}
-
 def extract_from_ics(ics_file):
     try:
         cal = Calendar.from_ical(ics_file.read())
@@ -159,10 +144,15 @@ def extract_from_ics(ics_file):
                         'date': component.get('dtstart').dt,
                         'type': None
                     })
-                elif any(turno in summary for turno in ['MATTINA', 'POMERIGGIO', 'NOTTE', 'SMONTO']):
+                elif any(turno in summary for turno in ['MATTINA', 'POMERIGGIO', 'NOTTE', 'SMONTO', 'RECUPERO']):
+                    shift = 'M' if 'MATTINA' in summary else \
+                            'P' if 'POMERIGGIO' in summary else \
+                            'N' if 'NOTTE' in summary else \
+                            'S' if 'SMONTO' in summary else \
+                            'R' if 'RECUPERO' in summary else '-'
                     shifts.append({
                         'date': component.get('dtstart').dt,
-                        'turno': 'M' if 'MATTINA' in summary else 'P' if 'POMERIGGIO' in summary else 'N' if 'NOTTE' in summary else 'S'
+                        'turno': shift
                     })
 
         return shifts, absences
@@ -192,7 +182,6 @@ def calculate_metrics(shifts, month, year):
                 if day != 0 and weekday == 6:
                     sundays += 1
         
-        # Filtra i turni validi escludendo '-'
         valid_shifts = [s for s in shifts[:days_in_month] if s != '-']
         shift_counts = {s: valid_shifts.count(s) for s in ORE_MAP if s != '-'}
         ore_totali = {s: count * ORE_MAP[s] for s, count in shift_counts.items()}
@@ -237,7 +226,7 @@ def calculate_metrics(shifts, month, year):
         st.error(f"Errore nei calcoli: {str(e)}")
         return None
 
-def display_month(month, year, festivita_nomi):
+def display_calendar(month, year, shifts, festivita_nomi):
     month_color = MONTH_COLORS.get(month, '#000000')
     st.markdown(
         f"<h2 style='text-align: center; color: {month_color};'>"
@@ -251,6 +240,45 @@ def display_month(month, year, festivita_nomi):
             f"({', '.join(festivita_nomi)})</div>",
             unsafe_allow_html=True
         )
+    
+    # Intestazioni giorni della settimana
+    weekdays = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica']
+    cols = st.columns(7)
+    for i, day in enumerate(weekdays):
+        cols[i].markdown(f"<div class='weekday-header'>{day}</div>", unsafe_allow_html=True)
+    
+    # Calendario
+    cal = calendar.Calendar(firstweekday=0)
+    month_weeks = cal.monthdayscalendar(year, list(MONTH_COLORS.keys()).index(month) + 1)
+    
+    for week in month_weeks:
+        cols = st.columns(7)
+        for i, day in enumerate(week):
+            if day == 0:
+                cols[i].write("")
+            else:
+                shift_index = day - 1
+                current_shift = shifts[shift_index] if shift_index < len(shifts) else '-'
+                color = SHIFT_COLORS.get(current_shift, '#FFFFFF')
+                
+                with cols[i]:
+                    st.markdown(
+                        f"<div class='calendar-day' style='background-color: {color};'>"
+                        f"<div class='day-number'>{day}</div>",
+                        unsafe_allow_html=True
+                    )
+                    options = ['-', 'M', 'P', 'N', 'MP', 'PN', 'REC', 'F', 'S', 'MAL', 'R']
+                    default_index = options.index(current_shift) if current_shift in options else 0
+                    new_shift = st.selectbox(
+                        label=f"Turno {day}",
+                        options=options,
+                        index=default_index,
+                        key=f"shift_{day}",
+                        label_visibility="collapsed"
+                    )
+                    if new_shift != current_shift:
+                        shifts[shift_index] = new_shift
+                        st.experimental_rerun()
 
 def main():
     st.markdown("<h1>Eureka!</h1>", unsafe_allow_html=True)
@@ -284,7 +312,7 @@ def main():
             value=datetime.now().year
         )
     
-    uploaded_file = st.file_uploader("Carica il planning turni", type=['xlsx', 'xls', 'ics'])
+    uploaded_file = st.file_uploader("Carica il planning turni", type=['ics'])
     
     if uploaded_file:
         with st.spinner('Elaborazione in corso...'):
@@ -292,22 +320,10 @@ def main():
                 shifts, absences = extract_from_ics(uploaded_file)
                 if shifts:
                     st.info("Nota: Se i turni non coincidono con quelli effettivi o ci sono modifiche, clicca su una cella del calendario per modificare il turno e aggiornare i dati.")
-                    st.subheader("📅 Turni")
-                    display_month(month, year, [])
                     
-                    if absences:
-                        st.warning("⚠️ Sono presenti delle assenze. Seleziona il tipo di assenza per ciascuna.")
-                        for absence in absences:
-                            absence_date = absence['date'].strftime('%Y-%m-%d')
-                            absence_type = st.selectbox(
-                                f"Tipo di assenza per il giorno {absence_date}:",
-                                ['Ferie (F)', 'Malattia (MAL)']
-                            )
-                            absence['type'] = 'F' if 'Ferie' in absence_type else 'MAL'
-                    
-                    shifts_list = [s['turno'] for s in shifts]
                     month_num = list(MONTH_COLORS.keys()).index(month) + 1
                     days_in_month = calendar.monthrange(year, month_num)[1]
+                    shifts_list = [s['turno'] for s in shifts]
                     shifts_list = (shifts_list[:days_in_month] + ['-'] * (days_in_month - len(shifts_list)))[:days_in_month]
                     
                     key = ('ics', month, year)
@@ -317,37 +333,7 @@ def main():
                         st.session_state.edited_shifts[key] = shifts_list.copy()
                     current_shifts = st.session_state.edited_shifts[key]
                     
-                    st.subheader("📅 Calendario Turni")
-                    cal = calendar.Calendar(firstweekday=0)
-                    month_weeks = cal.monthdayscalendar(year, list(MONTH_COLORS.keys()).index(month) + 1)
-                    
-                    for week in month_weeks:
-                        cols = st.columns(7)
-                        for i, day in enumerate(week):
-                            if day == 0:
-                                cols[i].write("")
-                            else:
-                                shift_index = day - 1
-                                current_shift = current_shifts[shift_index] if shift_index < len(current_shifts) else '-'
-                                color = SHIFT_COLORS.get(current_shift, '#FFFFFF')
-                                
-                                with cols[i]:
-                                    st.markdown(
-                                        f"<div class='calendar-day' style='background-color: {color};'>"
-                                        f"<strong>{day}</strong></div>",
-                                        unsafe_allow_html=True
-                                    )
-                                    options = ['-'] + [k for k in ORE_MAP.keys() if k != '-']
-                                    default_index = options.index(current_shift) if current_shift in options else 0
-                                    new_shift = st.selectbox(
-                                        label=f"Turno {day}",
-                                        options=options,
-                                        index=default_index,
-                                        key=f"shift_ics_{day}",
-                                        label_visibility="collapsed"
-                                    )
-                                    if new_shift != current_shift:
-                                        st.session_state.edited_shifts[key][shift_index] = new_shift
+                    display_calendar(month, year, current_shifts, [])
                     
                     metrics = calculate_metrics(current_shifts, month, year)
                     
@@ -372,143 +358,6 @@ def main():
                             col3.markdown(f"<div class='negative'>🟡 Ore Mancanti: {metrics['ore_mancanti']}h</div>", unsafe_allow_html=True)
                         elif metrics['ore_straordinario'] > 0:
                             col3.markdown(f"<div class='positive'>🟢 Ore Straordinario: {metrics['ore_straordinario']}h</div>", unsafe_allow_html=True)
-
-                        st.write("---")
-                        st.markdown("**Dettaglio Turni:**", unsafe_allow_html=True)
-                        shift_items = list(metrics['shift_counts'].items())
-                        num_columns = 3
-                        num_rows = (len(shift_items) + num_columns - 1) // num_columns
-
-                        for row in range(num_rows):
-                            cols = st.columns(num_columns)
-                            for col in range(num_columns):
-                                index = row * num_columns + col
-                                if index < len(shift_items):
-                                    s, count = shift_items[index]
-                                    ore = metrics['ore_totali'][s]
-                                    color = SHIFT_COLORS.get(s, '#FFFFFF')
-                                    with cols[col]:
-                                        st.markdown(
-                                            f"<div style='background-color: {color}; padding: 10px; border-radius: 5px; margin: 5px; text-align: center;'>"
-                                            f"<strong style='font-size: 1.2em;'>{s}</strong><br>"
-                                            f"Turni: {count}<br>"
-                                            f"Ore: {ore}</div>",
-                                            unsafe_allow_html=True
-                                        )
-                        
-                        st.write("---")
-                        st.write(f"**Giorni totali:** {metrics['days_in_month']}")
-                        st.write(f"**Domeniche:** {metrics['sundays']}")
-                        st.write(f"**Festività:** {metrics['festivita_count']}")
-                        if metrics['festivita_nomi']:
-                            st.write(f"**Festività:** {', '.join(metrics['festivita_nomi'])}")
-            
-            else:
-                people_shifts = extract_from_excel(uploaded_file)
-                if people_shifts:
-                    st.info("Nota: Se i turni non coincidono con quelli effettivi o ci sono modifiche, clicca su una cella del calendario per modificare il turno e aggiornare i dati.")
-                    st.subheader("📅 Turni Rilevati")
-                    display_month(month, year, [])
-                    
-                    selected_operator = st.selectbox("Seleziona l'operatore:", list(people_shifts.keys()))
-                    original_shifts = people_shifts[selected_operator]
-                    
-                    month_num = list(MONTH_COLORS.keys()).index(month) + 1
-                    days_in_month = calendar.monthrange(year, month_num)[1]
-                    original_shifts_padded = (original_shifts[:days_in_month] + ['-'] * (days_in_month - len(original_shifts)))[:days_in_month]
-                    
-                    key = (selected_operator, month, year)
-                    if 'edited_shifts' not in st.session_state:
-                        st.session_state.edited_shifts = {}
-                    if key not in st.session_state.edited_shifts:
-                        st.session_state.edited_shifts[key] = original_shifts_padded.copy()
-                    current_shifts = st.session_state.edited_shifts[key]
-                    
-                    st.subheader("📅 Calendario Turni")
-                    cal = calendar.Calendar(firstweekday=0)
-                    month_weeks = cal.monthdayscalendar(year, list(MONTH_COLORS.keys()).index(month) + 1)
-                    
-                    for week in month_weeks:
-                        cols = st.columns(7)
-                        for i, day in enumerate(week):
-                            if day == 0:
-                                cols[i].write("")
-                            else:
-                                shift_index = day - 1
-                                current_shift = current_shifts[shift_index] if shift_index < len(current_shifts) else '-'
-                                color = SHIFT_COLORS.get(current_shift, '#FFFFFF')
-                                
-                                with cols[i]:
-                                    st.markdown(
-                                        f"<div class='calendar-day' style='background-color: {color};'>"
-                                        f"<strong>{day}</strong></div>",
-                                        unsafe_allow_html=True
-                                    )
-                                    options = ['-'] + [k for k in ORE_MAP.keys() if k != '-']
-                                    default_index = options.index(current_shift) if current_shift in options else 0
-                                    new_shift = st.selectbox(
-                                        label=f"Turno {day}",
-                                        options=options,
-                                        index=default_index,
-                                        key=f"shift_{key}_{day}",
-                                        label_visibility="collapsed"
-                                    )
-                                    if new_shift != current_shift:
-                                        st.session_state.edited_shifts[key][shift_index] = new_shift
-                    
-                    metrics = calculate_metrics(current_shifts, month, year)
-                    
-                    if metrics:
-                        st.write("---")
-                        st.subheader("📊 Grafico a Torta - Dettaglio Turni")
-                        shift_counts = metrics['shift_counts']
-                        df_pie = pd.DataFrame({
-                            'Turno': list(shift_counts.keys()),
-                            'Conteggio': list(shift_counts.values())
-                        })
-                        fig = px.pie(df_pie, values='Conteggio', names='Turno', title='Distribuzione dei Turni')
-                        st.plotly_chart(fig)
-                        
-                        st.write("---")
-                        st.subheader("📊 Riepilogo Ore")
-                        col1, col2, col3 = st.columns(3)
-                        col1.metric("Totale Ore Lavorate", f"{metrics['ore_mensili']} ore")
-                        col2.metric("Ore Previste", f"{metrics['target_ore']} ore")
-                        
-                        if metrics['ore_mancanti'] > 0:
-                            col3.markdown(f"<div class='negative'>🟡 Ore Mancanti: {metrics['ore_mancanti']}h</div>", unsafe_allow_html=True)
-                        elif metrics['ore_straordinario'] > 0:
-                            col3.markdown(f"<div class='positive'>🟢 Ore Straordinario: {metrics['ore_straordinario']}h</div>", unsafe_allow_html=True)
-                        
-                        st.write("---")
-                        st.markdown("**Dettaglio Turni:**", unsafe_allow_html=True)
-                        shift_items = list(metrics['shift_counts'].items())
-                        num_columns = 3
-                        num_rows = (len(shift_items) + num_columns - 1) // num_columns
-
-                        for row in range(num_rows):
-                            cols = st.columns(num_columns)
-                            for col in range(num_columns):
-                                index = row * num_columns + col
-                                if index < len(shift_items):
-                                    s, count = shift_items[index]
-                                    ore = metrics['ore_totali'][s]
-                                    color = SHIFT_COLORS.get(s, '#FFFFFF')
-                                    with cols[col]:
-                                        st.markdown(
-                                            f"<div style='background-color: {color}; padding: 10px; border-radius: 5px; margin: 5px; text-align: center;'>"
-                                            f"<strong style='font-size: 1.2em;'>{s}</strong><br>"
-                                            f"Turni: {count}<br>"
-                                            f"Ore: {ore}</div>",
-                                            unsafe_allow_html=True
-                                        )
-                        
-                        st.write("---")
-                        st.write(f"**Giorni totali:** {metrics['days_in_month']}")
-                        st.write(f"**Domeniche:** {metrics['sundays']}")
-                        st.write(f"**Festività:** {metrics['festivita_count']}")
-                        if metrics['festivita_nomi']:
-                            st.write(f"**Festività:** {', '.join(metrics['festivita_nomi'])}")
 
 if __name__ == "__main__":
     main()
