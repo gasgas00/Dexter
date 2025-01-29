@@ -144,12 +144,12 @@ def extract_from_ics(ics_file):
                         'date': component.get('dtstart').dt,
                         'type': None
                     })
-                elif any(turno in summary for turno in ['MATTINA', 'POMERIGGIO', 'NOTTE', 'SMONTO', 'RECUPERO']):
+                elif any(turno in summary for turno in ['MATTINA', 'POMERIGGIO', 'NOTTE', 'SMONTO', 'RECUPERO', 'RIPOSO']):
                     shift = 'M' if 'MATTINA' in summary else \
                             'P' if 'POMERIGGIO' in summary else \
                             'N' if 'NOTTE' in summary else \
                             'S' if 'SMONTO' in summary else \
-                            'R' if 'RECUPERO' in summary else '-'
+                            'R' if 'RECUPERO' in summary or 'RIPOSO' in summary else '-'
                     shifts.append({
                         'date': component.get('dtstart').dt,
                         'turno': shift
@@ -276,7 +276,8 @@ def display_calendar(month, year, shifts, festivita_nomi):
                         options=options,
                         index=default_index,
                         key=key,
-                        label_visibility="collapsed"
+                        label_visibility="collapsed",
+                        on_change=lambda: st.experimental_rerun()
                     )
                     if new_shift != current_shift:
                         shifts[shift_index] = new_shift
@@ -356,12 +357,34 @@ def main():
                         st.plotly_chart(fig)
                         
                         st.write("---")
+                        st.subheader("📋 Dettaglio Turni e Ore")
+                        
+                        num_cols = 3
+                        cols = st.columns(num_cols)
+                        
+                        shift_types = [k for k in ORE_MAP.keys() if k != '-']
+                        for i, shift in enumerate(shift_types):
+                            count = metrics['shift_counts'].get(shift, 0)
+                            total_hours = metrics['ore_totali'].get(shift, 0)
+                            
+                            if count > 0:
+                                with cols[i % num_cols]:
+                                    st.markdown(f"""
+                                        <div style="padding: 15px; background: {SHIFT_COLORS[shift]}; 
+                                            border-radius: 10px; margin: 5px; color: {'white' if shift in ['N', 'PN', 'MP'] else 'black'}">
+                                            <h4>{shift}</h4>
+                                            <p>Turni: {count}</p>
+                                            <p>Ore totali: {total_hours}h</p>
+                                        </div>
+                                    """, unsafe_allow_html=True)
+                        
+                        st.write("---")
                         st.subheader("📊 Riepilogo Ore")
                         col1, col2, col3 = st.columns(3)
                         col1.metric("Totale Ore Lavorate", f"{metrics['ore_mensili']} ore")
                         col2.metric("Ore Previste", f"{metrics['target_ore']} ore")
                         
-                        if metrics['ore_mancanti'] > 0:
+                                                if metrics['ore_mancanti'] > 0:
                             col3.markdown(f"<div class='negative'>🟡 Ore Mancanti: {metrics['ore_mancanti']}h</div>", unsafe_allow_html=True)
                         elif metrics['ore_straordinario'] > 0:
                             col3.markdown(f"<div class='positive'>🟢 Ore Straordinario: {metrics['ore_straordinario']}h</div>", unsafe_allow_html=True)
