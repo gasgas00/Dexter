@@ -6,7 +6,7 @@ import re
 import pandas as pd
 import calendar
 from dateutil.easter import easter
-from datetime import datetime
+from datetime import datetime, date
 from io import BytesIO
 import pyexcel
 from icalendar import Calendar, Event
@@ -113,7 +113,167 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# ... [Funzioni normalize_name, is_valid_name, get_italian_holidays, extract_from_ics, calculate_metrics rimangono identiche] ...
+def normalize_name(name):
+    name = re.sub(r'\s+', ' ', str(name).upper().strip())
+    name = re.sub(r'[^A-ZÀÈÉÌÒÙ\s]', '', name)
+    return name
+
+def is_valid_name(text):
+    return re.match(r'^[A-ZÀÈÉÌÒÙ]{2,}\s+[A-ZÀÈÉÌÒÙ]{2,}(\s+[A-ZÀÈÉÌÒÙ]{2,})*$', text)
+
+def get_italian_holidays(year):
+    holidays = [
+        {'month': 1, 'day': 1, 'name': 'Capodanno'},
+        {'month': 1, 'day': 6, 'name': 'Epifania'},
+        {'month': 4, 'day': 25, 'name': 'Liberazione'},
+        {'month': 5, 'day': 1, 'name': 'Lavoro'},
+        {'month': 6, 'day': 2, 'name': 'Repubblica'},
+        {'month': 8, 'day': 15, 'name': 'Ferragosto'},
+        {'month': 11, 'day': 1, 'name': 'Ognissanti'},
+        {'month': 12, 'day': 8, 'name': 'Immacolata'},
+        {'month': 12, 'day': 25, 'name': 'Natale'},
+        {'month': 12, 'day': 26, 'name': 'S.Stefano'}
+    ]
+    
+    easter_date = easter(year)
+    pasquetta = easter_date + pd.DateOffset(days=1)
+    holidays.append({'month': pasquetta.month, 'day': pasquetta.day, 'name': 'Pasquetta'})
+    
+    return holidays
+
+def extract_from_ics(ics_file):
+    try:
+        # Verifica che il file sia stato letto correttamente
+        if ics_file is None:
+            return [], []
+
+        # Leggi il contenuto e verifica che non sia vuoto
+        ics_content = ics_file.getvalue()
+        if not ics_content:
+            st.error("Il file ICS è vuoto o corrotto")
+            return [], []
+
+        # Parsing del calendario
+        cal = Calendar.from_ical(ics_content)
+        
+        shifts = []
+        absences = []
+
+        for component in cal.walk():
+            if component.name == "VEVENT":
+                try:
+                    summary = str(component.get('summary', '')).upper()
+                    dt_start = component.get('dtstart')
+                    
+                    if not dt_start:
+                        continue
+                        
+                    # Converti la data in formato datetime.date
+                    event_date = dt_start.dt
+                    if isinstance(event_date, datetime):
+                        event_date = event_date.date()
+                    elif not isinstance(event_date, date):
+                        continue
+
+                    # Gestione assenze
+                    if 'ASSENZA' in summary:
+                        absences.append({
+                            'date': event_date,
+                            'type': None
+                        })
+                    
+                    # Gestione turni con controllo più robusto
+                    shift = '-'
+                    if 'MATTINA' in summary:
+                        shift = 'M'
+                    elif 'POMERIGGIO' in summary:
+                        shift = 'P'
+                    elif 'NOTTE' in summary:
+                        shift = 'N'
+                    elif 'SMONTO' in summary:
+                        shift = 'S'
+                    elif 'RECUPERO' in summary or 'RIPOSO' in summary:
+                        shift = 'R'
+
+                    shifts.append({
+                        'date': event_date,
+                        'turno': shift
+                    })
+
+                except Exception as e:
+                    st.warning(f"Errore processando evento: {str(e)}")
+                    continue
+
+        return shifts, absences
+
+    except Exception as e:
+        st.error(f"Errore critico durante la lettura ICS: {str(e)}")
+        return [], []
+
+def calculate_metrics(shifts, month, year):
+    try:
+        month_num = [
+            'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
+            'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'
+        ].index(month) + 1
+        
+        days_in_month = calendar.monthrange(year, month_num)[1]
+        
+        holidays = get_italian_holidays(year)
+        festivita = [h for h in holidays if h['month'] == month_num]
+        festivita_count = len(festivita)
+        festivita_nomi = [h['name'] for h in festivita]
+
+        cal = calendar.Calendar()
+        sundays = 0
+        for week in cal.monthdays2calendar(year, month_num):
+            for day, weekday in week:
+                if day != 0 and weekday == 6:
+                    sundays += 1
+        
+        valid_shifts = [s for s in shifts[:days_in_month] if s != '-']
+        shift_counts = {s: valid_shifts.count(s) for s in ORE_MAP if s != '-'}
+        ore_totali = {s: count * ORE_MAP[s] for s, count in shift_counts.items()}
+        
+        ore_mensili = sum(ore for s, ore in ore_totali.items() if s not in ['R', 'S', 'REC'])
+        target_ore = (days_in_month - sundays - festivita_count) * 6
+        
+        differenza = ore_mensili - target_ore
+        ore_mancanti = max(-differenza, 0)
+        ore_straordinario = max(differenza, 0)
+
+        cal = calendar.Calendar(firstweekday=0)
+        month_weeks = cal.monthdayscalendar(year, month_num)
+        shifts_per_day = (shifts[:days_in_month] + ['-'] * (days_in_month - len(shifts)))[:days_in_month]
+        
+        weeks = []
+        for week in month_weeks:
+            week_data = []
+            for day in week:
+                if day == 0:
+                    week_data.append((0, ''))
+                else:
+                    shift = shifts_per_day[day-1] if (day-1) < len(shifts_per_day) else '-'
+                    week_data.append((day, shift))
+            weeks.append(week_data)
+        
+        return {
+            'days_in_month': days_in_month,
+            'festivita_count': festivita_count,
+            'festivita_nomi': festivita_nomi,
+            'shift_counts': shift_counts,
+            'ore_totali': ore_totali,
+            'ore_mensili': ore_mensili,
+            'target_ore': target_ore,
+            'ore_mancanti': ore_mancanti,
+            'ore_straordinario': ore_straordinario,
+            'weeks': weeks,
+            'sundays': sundays
+        }
+        
+    except Exception as e:
+        st.error(f"Errore nei calcoli: {str(e)}")
+        return None
 
 def display_calendar(month, year, shifts, festivita_nomi):
     month_num = list(MONTH_COLORS.keys()).index(month) + 1
@@ -168,11 +328,10 @@ def display_calendar(month, year, shifts, festivita_nomi):
                             index=default_index,
                             key=key,
                             label_visibility="collapsed",
-                            on_change=lambda: st.session_state.update(force_update=True)  # Fix per refresh immediato
+                            on_change=lambda: st.session_state.update(force_update=True)
                         )
                         
                         if new_shift != current_shift:
-                            # Aggiorna lo stato in modo esplicito
                             new_shifts = shifts.copy()
                             new_shifts[shift_index] = new_shift
                             st.session_state.edited_shifts[('ics', month, year)] = new_shifts
