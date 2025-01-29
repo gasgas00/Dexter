@@ -227,6 +227,7 @@ def calculate_metrics(shifts, month, year):
         return None
 
 def display_calendar(month, year, shifts, festivita_nomi):
+    month_num = list(MONTH_COLORS.keys()).index(month) + 1
     month_color = MONTH_COLORS.get(month, '#000000')
     st.markdown(
         f"<h2 style='text-align: center; color: {month_color};'>"
@@ -249,7 +250,7 @@ def display_calendar(month, year, shifts, festivita_nomi):
     
     # Calendario
     cal = calendar.Calendar(firstweekday=0)
-    month_weeks = cal.monthdayscalendar(year, list(MONTH_COLORS.keys()).index(month) + 1)
+    month_weeks = cal.monthdayscalendar(year, month_num)
     
     for week in month_weeks:
         cols = st.columns(7)
@@ -269,16 +270,16 @@ def display_calendar(month, year, shifts, festivita_nomi):
                     )
                     options = ['-', 'M', 'P', 'N', 'MP', 'PN', 'REC', 'F', 'S', 'MAL', 'R']
                     default_index = options.index(current_shift) if current_shift in options else 0
+                    key = f"shift_{year}_{month_num}_{day}"
                     new_shift = st.selectbox(
                         label=f"Turno {day}",
                         options=options,
                         index=default_index,
-                        key=f"shift_{day}",
+                        key=key,
                         label_visibility="collapsed"
                     )
                     if new_shift != current_shift:
                         shifts[shift_index] = new_shift
-                        st.experimental_rerun()
 
 def main():
     st.markdown("<h1>Eureka!</h1>", unsafe_allow_html=True)
@@ -323,8 +324,14 @@ def main():
                     
                     month_num = list(MONTH_COLORS.keys()).index(month) + 1
                     days_in_month = calendar.monthrange(year, month_num)[1]
-                    shifts_list = [s['turno'] for s in shifts]
-                    shifts_list = (shifts_list[:days_in_month] + ['-'] * (days_in_month - len(shifts_list)))[:days_in_month]
+                    
+                    # Crea un dizionario giorno -> turno
+                    shifts_dict = {}
+                    for s in shifts:
+                        if s['date'].month == month_num and s['date'].year == year:
+                            shifts_dict[s['date'].day] = s['turno']
+                    # Riempie la lista per tutti i giorni del mese
+                    shifts_list = [shifts_dict.get(day, '-') for day in range(1, days_in_month + 1)]
                     
                     key = ('ics', month, year)
                     if 'edited_shifts' not in st.session_state:
