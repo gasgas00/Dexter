@@ -28,7 +28,7 @@ ORE_MAP = {
 }
 
 SHIFT_COLORS = {
-    'M': '#87CEEB', 'P': '#0000FF', 'N': '#800080',
+    'M': '#87CEEB', 'P': '#ADD8E6', 'N': '#800080',  # Schiarito il blu del turno P
     'R': '#00FF00', 'S': '#FFA07A', 'F': '#FFD700',
     'PN': '#FF69B4', 'MP': '#9370DB', 'REC': '#D3D3D3', 'MAL': '#FF4444'
 }
@@ -75,10 +75,10 @@ st.markdown("""
         .footer {
             position: fixed;
             bottom: 10px;
-            right: 20px;
+            left: 10px;
             color: #7f8fa6;
             font-family: 'Rajdhani', sans-serif;
-            font-size: 0.8em;
+            font-size: 1.5em;
         }
         
         .negative {
@@ -100,7 +100,14 @@ st.markdown("""
         }
         
         .detail {
-            font-size: 1.2em; /* Aumentato la dimensione dei caratteri */
+            font-size: 1.5em; /* Aumentato la dimensione dei caratteri */
+        }
+        
+        .calendar-day {
+            margin: 5px;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -330,46 +337,6 @@ def main():
                     metrics = calculate_metrics(shifts_list, month, year)
                     
                     if metrics:
-                        st.subheader("📊 Riepilogo Ore")
-                        col1, col2, col3 = st.columns(3)
-                        col1.metric("Totale Ore Lavorate", f"{metrics['ore_mensili']} ore")
-                        col2.metric("Ore Previste", f"{metrics['target_ore']} ore")
-                        
-                        if metrics['ore_mancanti'] > 0:
-                            col3.markdown(f"<div class='negative'>🟡 Ore Mancanti: {metrics['ore_mancanti']}h</div>", unsafe_allow_html=True)
-                        elif metrics['ore_straordinario'] > 0:
-                            col3.markdown(f"<div class='positive'>🟢 Ore Straordinario: {metrics['ore_straordinario']}h</div>", unsafe_allow_html=True)
-                        
-                        st.write("---")
-                        st.markdown("**Dettaglio Turni:**")
-                        cols = st.columns(3)
-                        shift_items = list(metrics['shift_counts'].items())
-                        
-                        for i in range(0, len(shift_items), 3):
-                            with cols[0]:
-                                if i < len(shift_items):
-                                    s, count = shift_items[i]
-                                    ore = metrics['ore_totali'][s]
-                                    st.write(f"**{s}:** {count} ({ore} ore)")
-                            with cols[1]:
-                                if i+1 < len(shift_items):
-                                    s, count = shift_items[i+1]
-                                    ore = metrics['ore_totali'][s]
-                                    st.write(f"**{s}:** {count} ({ore} ore)")
-                            with cols[2]:
-                                if i+2 < len(shift_items):
-                                    s, count = shift_items[i+2]
-                                    ore = metrics['ore_totali'][s]
-                                    st.write(f"**{s}:** {count} ({ore} ore)")
-                        
-                        st.write("---")
-                        st.write(f"**Giorni totali:** {metrics['days_in_month']}")
-                        st.write(f"**Domeniche:** {metrics['sundays']}")
-                        st.write(f"**Festività:** {metrics['festivita_count']}")
-                        if metrics['festivita_nomi']:
-                            st.write(f"**Festività:** {', '.join(metrics['festivita_nomi'])}")
-                        
-                        st.write("---")
                         st.subheader("📅 Calendario Turni")
                         
                         # Creazione del calendario
@@ -385,12 +352,11 @@ def main():
                                     shift = shifts_list[day - 1] if (day - 1) < len(shifts_list) else ''
                                     color = SHIFT_COLORS.get(shift, '#FFFFFF')
                                     cols[i].markdown(
-                                        f"<div style='background-color: {color}; padding: 10px; border-radius: 5px; text-align: center;'>"
+                                        f"<div class='calendar-day' style='background-color: {color};'>"
                                         f"<strong>{day}</strong><br>{shift}</div>",
                                         unsafe_allow_html=True
                                     )
                         
-                        # Aggiunta del grafico a torta per il dettaglio turni
                         st.write("---")
                         st.subheader("📊 Grafico a Torta - Dettaglio Turni")
                         shift_counts = metrics['shift_counts']
@@ -401,88 +367,128 @@ def main():
                         fig = px.pie(df_pie, values='Conteggio', names='Turno', title='Distribuzione dei Turni')
                         st.plotly_chart(fig)
                         
+                        st.write("---")
+                        st.subheader("📊 Riepilogo Ore")
+                        col1, col2, col3 = st.columns(3)
+                        col1.metric("Totale Ore Lavorate", f"{metrics['ore_mensili']} ore")
+                        col2.metric("Ore Previste", f"{metrics['target_ore']} ore")
+                        
+                        if metrics['ore_mancanti'] > 0:
+                            col3.markdown(f"<div class='negative'>🟡 Ore Mancanti: {metrics['ore_mancanti']}h</div>", unsafe_allow_html=True)
+                        elif metrics['ore_straordinario'] > 0:
+                            col3.markdown(f"<div class='positive'>🟢 Ore Straordinario: {metrics['ore_straordinario']}h</div>", unsafe_allow_html=True)
+                        
+                        st.write("---")
+                        st.markdown("**Dettaglio Turni:**", unsafe_allow_html=True)
+                        cols = st.columns(3)
+                        shift_items = list(metrics['shift_counts'].items())
+                        
+                        for i in range(0, len(shift_items), 3):
+                            with cols[0]:
+                                if i < len(shift_items):
+                                    s, count = shift_items[i]
+                                    ore = metrics['ore_totali'][s]
+                                    st.markdown(f"<div class='detail'>**{s}:** {count} ({ore} ore)</div>", unsafe_allow_html=True)
+                            with cols[1]:
+                                if i+1 < len(shift_items):
+                                    s, count = shift_items[i+1]
+                                    ore = metrics['ore_totali'][s]
+                                    st.markdown(f"<div class='detail'>**{s}:** {count} ({ore} ore)</div>", unsafe_allow_html=True)
+                            with cols[2]:
+                                if i+2 < len(shift_items):
+                                    s, count = shift_items[i+2]
+                                    ore = metrics['ore_totali'][s]
+                                    st.markdown(f"<div class='detail'>**{s}:** {count} ({ore} ore)</div>", unsafe_allow_html=True)
+                        
+                        st.write("---")
+                        st.write(f"**Giorni totali:** {metrics['days_in_month']}")
+                        st.write(f"**Domeniche:** {metrics['sundays']}")
+                        st.write(f"**Festività:** {metrics['festivita_count']}")
+                        if metrics['festivita_nomi']:
+                            st.write(f"**Festività:** {', '.join(metrics['festivita_nomi'])}")
+                        
             else:
                 people_shifts = extract_from_excel(uploaded_file)
                 if people_shifts:
                     st.subheader("📅 Turni Rilevati")
                     display_month(month, year, [])
                     
-                    for name, shifts in people_shifts.items():
-                        st.write(f"**{name}**")
-                        metrics = calculate_metrics(shifts, month, year)
+                    selected_operator = st.selectbox("Seleziona l'operatore:", list(people_shifts.keys()))
+                    shifts = people_shifts[selected_operator]
+                    metrics = calculate_metrics(shifts, month, year)
+                    
+                    if metrics:
+                        st.subheader("📅 Calendario Turni")
                         
-                        if metrics:
-                            col1, col2, col3 = st.columns(3)
-                            col1.metric("Totale Ore Lavorate", f"{metrics['ore_mensili']} ore")
-                            col2.metric("Ore Previste", f"{metrics['target_ore']} ore")
-                            
-                            if metrics['ore_mancanti'] > 0:
-                                col3.markdown(f"<div class='negative'>🟡 Ore Mancanti: {metrics['ore_mancanti']}h</div>", unsafe_allow_html=True)
-                            elif metrics['ore_straordinario'] > 0:
-                                col3.markdown(f"<div class='positive'>🟢 Ore Straordinario: {metrics['ore_straordinario']}h</div>", unsafe_allow_html=True)
-                            
-                            st.write("---")
-                            st.markdown("**Dettaglio Turni:**")
-                            cols = st.columns(3)
-                            shift_items = list(metrics['shift_counts'].items())
-                            
-                            for i in range(0, len(shift_items), 3):
-                                with cols[0]:
-                                    if i < len(shift_items):
-                                        s, count = shift_items[i]
-                                        ore = metrics['ore_totali'][s]
-                                        st.write(f"**{s}:** {count} ({ore} ore)")
-                                with cols[1]:
-                                    if i+1 < len(shift_items):
-                                        s, count = shift_items[i+1]
-                                        ore = metrics['ore_totali'][s]
-                                        st.write(f"**{s}:** {count} ({ore} ore)")
-                                with cols[2]:
-                                    if i+2 < len(shift_items):
-                                        s, count = shift_items[i+2]
-                                        ore = metrics['ore_totali'][s]
-                                        st.write(f"**{s}:** {count} ({ore} ore)")
-                            
-                            st.write("---")
-                            st.write(f"**Giorni totali:** {metrics['days_in_month']}")
-                            st.write(f"**Domeniche:** {metrics['sundays']}")
-                            st.write(f"**Festività:** {metrics['festivita_count']}")
-                            if metrics['festivita_nomi']:
-                                st.write(f"**Festività:** {', '.join(metrics['festivita_nomi'])}")
-                            
-                            st.write("---")
-                            st.subheader("📅 Calendario Turni")
-                            
-                            # Creazione del calendario
-                            cal = calendar.Calendar(firstweekday=0)
-                            month_weeks = cal.monthdayscalendar(year, list(MONTH_COLORS.keys()).index(month) + 1)
-                            
-                            for week in month_weeks:
-                                cols = st.columns(7)
-                                for i, day in enumerate(week):
-                                    if day == 0:
-                                        cols[i].write("")
-                                    else:
-                                        shift = shifts[day - 1] if (day - 1) < len(shifts) else ''
-                                        color = SHIFT_COLORS.get(shift, '#FFFFFF')
-                                        cols[i].markdown(
-                                            f"<div style='background-color: {color}; padding: 10px; border-radius: 5px; text-align: center;'>"
-                                            f"<strong>{day}</strong><br>{shift}</div>",
-                                            unsafe_allow_html=True
-                                        )
-                            
-                            # Aggiunta del grafico a torta per il dettaglio turni
-                            st.write("---")
-                            st.subheader("📊 Grafico a Torta - Dettaglio Turni")
-                            shift_counts = metrics['shift_counts']
-                            df_pie = pd.DataFrame({
-                                'Turno': list(shift_counts.keys()),
-                                'Conteggio': list(shift_counts.values())
-                            })
-                            fig = px.pie(df_pie, values='Conteggio', names='Turno', title='Distribuzione dei Turni')
-                            st.plotly_chart(fig)
+                        # Creazione del calendario
+                        cal = calendar.Calendar(firstweekday=0)
+                        month_weeks = cal.monthdayscalendar(year, list(MONTH_COLORS.keys()).index(month) + 1)
+                        
+                        for week in month_weeks:
+                            cols = st.columns(7)
+                            for i, day in enumerate(week):
+                                if day == 0:
+                                    cols[i].write("")
+                                else:
+                                    shift = shifts[day - 1] if (day - 1) < len(shifts) else ''
+                                    color = SHIFT_COLORS.get(shift, '#FFFFFF')
+                                    cols[i].markdown(
+                                        f"<div class='calendar-day' style='background-color: {color};'>"
+                                        f"<strong>{day}</strong><br>{shift}</div>",
+                                        unsafe_allow_html=True
+                                    )
+                        
+                        st.write("---")
+                        st.subheader("📊 Grafico a Torta - Dettaglio Turni")
+                        shift_counts = metrics['shift_counts']
+                        df_pie = pd.DataFrame({
+                            'Turno': list(shift_counts.keys()),
+                            'Conteggio': list(shift_counts.values())
+                        })
+                        fig = px.pie(df_pie, values='Conteggio', names='Turno', title='Distribuzione dei Turni')
+                        st.plotly_chart(fig)
+                        
+                        st.write("---")
+                        st.subheader("📊 Riepilogo Ore")
+                        col1, col2, col3 = st.columns(3)
+                        col1.metric("Totale Ore Lavorate", f"{metrics['ore_mensili']} ore")
+                        col2.metric("Ore Previste", f"{metrics['target_ore']} ore")
+                        
+                        if metrics['ore_mancanti'] > 0:
+                            col3.markdown(f"<div class='negative'>🟡 Ore Mancanti: {metrics['ore_mancanti']}h</div>", unsafe_allow_html=True)
+                        elif metrics['ore_straordinario'] > 0:
+                            col3.markdown(f"<div class='positive'>🟢 Ore Straordinario: {metrics['ore_straordinario']}h</div>", unsafe_allow_html=True)
+                        
+                        st.write("---")
+                        st.markdown("**Dettaglio Turni:**", unsafe_allow_html=True)
+                        cols = st.columns(3)
+                        shift_items = list(metrics['shift_counts'].items())
+                        
+                        for i in range(0, len(shift_items), 3):
+                            with cols[0]:
+                                if i < len(shift_items):
+                                    s, count = shift_items[i]
+                                    ore = metrics['ore_totali'][s]
+                                    st.markdown(f"<div class='detail'>**{s}:** {count} ({ore} ore)</div>", unsafe_allow_html=True)
+                            with cols[1]:
+                                if i+1 < len(shift_items):
+                                    s, count = shift_items[i+1]
+                                    ore = metrics['ore_totali'][s]
+                                    st.markdown(f"<div class='detail'>**{s}:** {count} ({ore} ore)</div>", unsafe_allow_html=True)
+                            with cols[2]:
+                                if i+2 < len(shift_items):
+                                    s, count = shift_items[i+2]
+                                    ore = metrics['ore_totali'][s]
+                                    st.markdown(f"<div class='detail'>**{s}:** {count} ({ore} ore)</div>", unsafe_allow_html=True)
+                        
+                        st.write("---")
+                        st.write(f"**Giorni totali:** {metrics['days_in_month']}")
+                        st.write(f"**Domeniche:** {metrics['sundays']}")
+                        st.write(f"**Festività:** {metrics['festivita_count']}")
+                        if metrics['festivita_nomi']:
+                            st.write(f"**Festività:** {', '.join(metrics['festivita_nomi'])}")
     
-    st.markdown("<div class='footer'>Made with ❤️ by UTIC Team</div>", unsafe_allow_html=True)
+    st.markdown("<div class='footer'>App creata da Gianluca M.<br>EUREKA!<br>L'App per analizzare i turni degli infermieri</div>", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
